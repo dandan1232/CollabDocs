@@ -1,5 +1,8 @@
 # Local product and architecture documents
 /docs/
+/**/*.md
+**/.gitkeep
+/apps/*/pnpm-lock.yaml
 
 # Dependencies and build artifacts
 node_modules/

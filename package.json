@@ -1,0 +1,35 @@
+{
+  "name": "collabdocs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "免登录、多人实时协作的在线文档工作室",
+  "license": "MIT",
+  "author": "念安 / dandan1232",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.39.5",
+    "globals": "^16.0.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.0.0",
+    "turbo": "^2.10.8",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.10"
+  }
+}
