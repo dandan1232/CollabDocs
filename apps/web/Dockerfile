@@ -18,7 +18,7 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS builder
 WORKDIR /workspace
 COPY . .
-RUN pnpm --filter @collabdocs/web build
+RUN pnpm exec turbo run build --filter=@collabdocs/web...
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
