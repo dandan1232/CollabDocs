@@ -1,0 +1,33 @@
+# Local product and architecture documents
+/docs/
+
+# Dependencies and build artifacts
+node_modules/
+.pnpm-store/
+.next/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Tests and coverage
+coverage/
+playwright-report/
+test-results/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+uploads/
+*.log
+pnpm-debug.log*
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
