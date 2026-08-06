@@ -88,7 +88,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3000/"]
       interval: 10s
       timeout: 5s
       retries: 10
