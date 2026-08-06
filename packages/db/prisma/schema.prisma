@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WorkspaceType {
+  PERSONAL
+  TEAM
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum SharePermission {
+  VIEW
+  EDIT
+}
+
+enum DocumentFont {
+  SANS
+  SERIF
+  HANDWRITING
+  MONO
+}
+
+enum AssetStatus {
+  PENDING
+  READY
+  FAILED
+  DELETED
+}
+
+model GuestIdentity {
+  id             String   @id @default(uuid()) @db.Uuid
+  credentialHash String   @unique @map("credential_hash") @db.VarChar(128)
+  nickname       String   @db.VarChar(80)
+  avatarSeed     String   @map("avatar_seed") @db.VarChar(128)
+  presenceColor  String   @map("presence_color") @db.Char(7)
+  locale         String   @default("zh-CN") @db.VarChar(10)
+  theme          String   @default("system") @db.VarChar(16)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  lastSeenAt     DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+
+  ownedWorkspaces  Workspace[]       @relation("WorkspaceOwner")
+  memberships      WorkspaceMember[]
+  createdFolders   Folder[]          @relation("FolderCreatedBy")
+  createdDocuments Document[]        @relation("DocumentCreatedBy")
+  updatedDocuments Document[]        @relation("DocumentUpdatedBy")
+  createdInvites   InviteToken[]     @relation("InviteCreatedBy")
+  createdShares    ShareLink[]       @relation("ShareCreatedBy")
+  recoveryKeys     RecoveryKey[]     @relation("RecoveryKeyCreatedBy")
+  assets           Asset[]           @relation("AssetCreatedBy")
+  favorites        Favorite[]
+
+  @@map("guest_identities")
+}
+
+model Workspace {
+  id           String        @id @default(uuid()) @db.Uuid
+  type         WorkspaceType
+  name         String        @db.VarChar(120)
+  icon         String?       @db.VarChar(32)
+  ownerGuestId String        @map("owner_guest_id") @db.Uuid
+  storageUsed  BigInt        @default(0) @map("storage_used")
+  storageLimit BigInt        @default(104857600) @map("storage_limit")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  purgeAfter   DateTime?     @map("purge_after") @db.Timestamptz(3)
+
+  owner        GuestIdentity     @relation("WorkspaceOwner", fields: [ownerGuestId], references: [id], onDelete: Restrict)
+  members      WorkspaceMember[]
+  folders      Folder[]
+  documents    Document[]
+  invites      InviteToken[]
+  recoveryKeys RecoveryKey[]
+  assets       Asset[]
+
+  @@index([ownerGuestId])
+  @@index([deletedAt, purgeAfter])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  guestId     String        @map("guest_id") @db.Uuid
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now()) @map("joined_at") @db.Timestamptz(3)
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  guest     GuestIdentity @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, guestId])
+  @@index([guestId])
+  @@map("workspace_members")
+}
+
+model Folder {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  parentId    String?   @map("parent_id") @db.Uuid
+  name        String    @db.VarChar(160)
+  position    Int       @default(0)
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  purgeAfter  DateTime? @map("purge_after") @db.Timestamptz(3)
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent    Folder?       @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]      @relation("FolderHierarchy")
+  createdBy GuestIdentity @relation("FolderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  documents Document[]
+  favorites Favorite[]
+
+  @@index([workspaceId, parentId, position])
+  @@index([deletedAt, purgeAfter])
+  @@map("folders")
+}
+
+model Document {
+  id             String                   @id @default(uuid()) @db.Uuid
+  workspaceId    String                   @map("workspace_id") @db.Uuid
+  folderId       String?                  @map("folder_id") @db.Uuid
+  title          String                   @default("Untitled") @db.VarChar(240)
+  position       Int                      @default(0)
+  fontFamily     DocumentFont             @default(SANS) @map("font_family")
+  isWide         Boolean                  @default(false) @map("is_wide")
+  plainText      String                   @default("") @map("plain_text") @db.Text
+  searchVector   Unsupported("tsvector")? @map("search_vector")
+  contentVersion Int                      @default(0) @map("content_version")
+  createdById    String                   @map("created_by_id") @db.Uuid
+  updatedById    String                   @map("updated_by_id") @db.Uuid
+  createdAt      DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime?                @map("deleted_at") @db.Timestamptz(3)
+  purgeAfter     DateTime?                @map("purge_after") @db.Timestamptz(3)
+
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder             Folder?             @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  createdBy          GuestIdentity       @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy          GuestIdentity       @relation("DocumentUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  collaborationState CollaborationState?
+  shareLinks         ShareLink[]
+  assets             Asset[]
+  favorites          Favorite[]
+
+  @@index([workspaceId, folderId, position])
+  @@index([updatedAt])
+  @@index([deletedAt, purgeAfter])
+  @@map("documents")
+}
+
+model CollaborationState {
+  documentId    String   @id @map("document_id") @db.Uuid
+  state         Bytes    @db.ByteA
+  schemaVersion Int      @default(1) @map("schema_version")
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("collaboration_states")
+}
+
+model InviteToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  workspaceId String    @map("workspace_id") @db.Uuid
+  createdById String    @map("created_by_id") @db.Uuid
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+  useCount    Int       @default(0) @map("use_count")
+  maxUses     Int?      @map("max_uses")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy GuestIdentity @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, revokedAt, expiresAt])
+  @@map("invite_tokens")
+}
+
+model ShareLink {
+  id          String          @id @default(uuid()) @db.Uuid
+  tokenHash   String          @unique @map("token_hash") @db.Char(64)
+  documentId  String          @map("document_id") @db.Uuid
+  permission  SharePermission @default(VIEW)
+  createdById String          @map("created_by_id") @db.Uuid
+  expiresAt   DateTime?       @map("expires_at") @db.Timestamptz(3)
+  revokedAt   DateTime?       @map("revoked_at") @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  document  Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy GuestIdentity @relation("ShareCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([documentId, revokedAt, expiresAt])
+  @@map("share_links")
+}
+
+model RecoveryKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  workspaceId String    @map("workspace_id") @db.Uuid
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy GuestIdentity @relation("RecoveryKeyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, revokedAt])
+  @@map("recovery_keys")
+}
+
+model Asset {
+  id           String      @id @default(uuid()) @db.Uuid
+  workspaceId  String      @map("workspace_id") @db.Uuid
+  documentId   String?     @map("document_id") @db.Uuid
+  objectKey    String      @unique @map("object_key") @db.VarChar(512)
+  originalName String      @map("original_name") @db.VarChar(255)
+  mimeType     String      @map("mime_type") @db.VarChar(120)
+  size         BigInt
+  width        Int?
+  height       Int?
+  status       AssetStatus @default(PENDING)
+  createdById  String      @map("created_by_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt    DateTime?   @map("deleted_at") @db.Timestamptz(3)
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document  Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdBy GuestIdentity @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status])
+  @@index([documentId])
+  @@map("assets")
+}
+
+model Favorite {
+  id         String   @id @default(uuid()) @db.Uuid
+  guestId    String   @map("guest_id") @db.Uuid
+  documentId String?  @map("document_id") @db.Uuid
+  folderId   String?  @map("folder_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  guest    GuestIdentity @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  document Document?     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  folder   Folder?       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([guestId, documentId])
+  @@unique([guestId, folderId])
+  @@map("favorites")
+}

@@ -12,6 +12,7 @@ dist/
 build/
 .turbo/
 *.tsbuildinfo
+/packages/db/src/generated/
 
 # Tests and coverage
 coverage/

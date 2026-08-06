@@ -1,1 +1,6 @@
-export const DATABASE_PACKAGE_NAME = "@collabdocs/db";
+export {
+  checkDatabaseHealth,
+  createDatabaseClient,
+  getDatabaseUrl,
+} from "./client.js";
+export * from "./generated/prisma/client.js";
