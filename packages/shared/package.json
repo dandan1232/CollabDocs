@@ -16,5 +16,10 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src --passWithNoTests"
+  },
+  "dependencies": {
+    "@dicebear/core": "10",
+    "@dicebear/styles": "10",
+    "unique-names-generator": "4.7.1"
   }
 }
