@@ -23,6 +23,7 @@ WORKDIR /app/apps/realtime
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 collabdocs
 COPY --from=production-dependencies --chown=collabdocs:nodejs /workspace/node_modules /app/node_modules
 COPY --from=production-dependencies --chown=collabdocs:nodejs /workspace/apps/realtime/node_modules ./node_modules
+COPY --from=production-dependencies --chown=collabdocs:nodejs /workspace/packages/db/node_modules /app/packages/db/node_modules
 COPY --from=builder --chown=collabdocs:nodejs /workspace/apps/realtime/dist ./dist
 COPY --from=builder --chown=collabdocs:nodejs /workspace/packages/db/dist /app/packages/db/dist
 COPY --from=builder --chown=collabdocs:nodejs /workspace/packages/db/package.json /app/packages/db/package.json
