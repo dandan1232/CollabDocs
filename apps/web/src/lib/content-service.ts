@@ -484,7 +484,7 @@ export async function saveDocumentState(
   );
 
   return database.$transaction(async (transaction) => {
-    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${document.id}))`;
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${document.id}))`;
     await transaction.document.update({
       where: {
         id: document.id,

@@ -39,7 +39,7 @@ export function createPostgresPersistence(
     },
     async store(documentId, state) {
       await database.$transaction(async (transaction) => {
-        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${documentId}))`;
+        await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${documentId}))`;
         const current = await transaction.collaborationState.findUnique({
           where: { documentId },
           select: { state: true },
