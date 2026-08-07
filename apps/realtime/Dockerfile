@@ -14,7 +14,7 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/realtime/package.json apps/realtime/package.json
 COPY packages/db/package.json packages/db/package.json
-RUN pnpm install --frozen-lockfile --prod --filter @collabdocs/realtime
+RUN pnpm install --frozen-lockfile --prod --filter @collabdocs/realtime...
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
