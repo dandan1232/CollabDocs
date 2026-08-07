@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { authorizeConnection, createHealthPayload } from "./server.js";
+import {
+  authorizeConnection,
+  createHealthPayload,
+  loadDocumentState,
+} from "./server.js";
 
 describe("realtime health payload", () => {
   it("identifies the service as healthy", () => {
@@ -50,5 +54,18 @@ describe("realtime authorization", () => {
         fetcher as typeof fetch,
       ),
     ).rejects.toThrow("authorization rejected");
+  });
+});
+
+describe("realtime persistence", () => {
+  it("leaves a new room empty when no persisted Yjs update exists", async () => {
+    const persistence = {
+      load: async () => null,
+      store: async () => undefined,
+    };
+
+    await expect(loadDocumentState(persistence, "new-document")).resolves.toBe(
+      undefined,
+    );
   });
 });

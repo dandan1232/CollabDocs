@@ -67,6 +67,13 @@ export function createPostgresPersistence(
   };
 }
 
+export async function loadDocumentState(
+  persistence: RealtimePersistence,
+  documentId: string,
+) {
+  return (await persistence.load(documentId)) ?? undefined;
+}
+
 export function createHealthPayload() {
   return {
     service: "collabdocs-realtime",
@@ -125,7 +132,7 @@ export function createRealtimeServer(
       return context;
     },
     async onLoadDocument({ documentName }) {
-      return (await persistence.load(documentName)) ?? new Uint8Array();
+      return loadDocumentState(persistence, documentName);
     },
     async onStoreDocument({ documentName, document }) {
       await persistence.store(documentName, Y.encodeStateAsUpdate(document));
