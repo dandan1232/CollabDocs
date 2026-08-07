@@ -2,7 +2,9 @@
 
 import {
   Archive,
+  Check,
   ChevronRight,
+  Copy,
   FilePlus2,
   FileText,
   FolderOpen,
@@ -16,6 +18,7 @@ import {
   Sparkles,
   Star,
   Sun,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -40,7 +43,7 @@ type Workspace = {
   id: string;
   type: "personal" | "team";
   name: string;
-  role: string;
+  role: "owner" | "admin" | "member";
 };
 
 type Session = {
@@ -79,6 +82,13 @@ type Tree = {
 
 type View = "home" | "favorites" | "trash";
 type CreateMode = "folder" | "document" | "team" | null;
+
+type InviteDetails = {
+  token: string;
+  workspaceName: string;
+  expiresAt: string;
+  maxUses: number;
+};
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -119,6 +129,9 @@ export function WorkspaceShell() {
   const [draftName, setDraftName] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteDetails, setInviteDetails] = useState<InviteDetails | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [notice, setNotice] = useState("正在准备你的工作室…");
   const [dark, setDark] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
@@ -138,17 +151,55 @@ export function WorkspaceShell() {
 
   useEffect(() => {
     let active = true;
-    requestJson<Session>("/api/session", { method: "POST" })
-      .then((nextSession) => {
+    async function bootstrap() {
+      try {
+        const nextSession = await requestJson<Session>("/api/session", {
+          method: "POST",
+        });
         if (!active) return;
-        setSession(nextSession);
-        setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
-        setNotice("所有更改已保存");
-      })
-      .catch((error: unknown) => {
-        if (active)
+
+        const url = new URL(window.location.href);
+        const inviteToken = url.searchParams.get("invite");
+        if (inviteToken) {
+          try {
+            const accepted = await requestJson<{
+              session: Session;
+              workspaceId: string;
+            }>("/api/invites/accept", {
+              method: "POST",
+              body: JSON.stringify({ token: inviteToken }),
+            });
+            if (!active) return;
+            setSession(accepted.session);
+            setWorkspaceId(accepted.workspaceId);
+            setNotice("已加入团队空间，可以开始协作了");
+          } catch (error) {
+            setSession(nextSession);
+            setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
+            setNotice(
+              error instanceof Error ? error.message : "邀请链接无法使用",
+            );
+          } finally {
+            url.searchParams.delete("invite");
+            window.history.replaceState(
+              {},
+              "",
+              `${url.pathname}${url.search}${url.hash}`,
+            );
+          }
+        } else {
+          setSession(nextSession);
+          setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
+          setNotice("所有更改已保存");
+        }
+      } catch (error) {
+        if (active) {
           setNotice(error instanceof Error ? error.message : "连接失败");
-      });
+        }
+      }
+    }
+
+    void bootstrap();
     return () => {
       active = false;
     };
@@ -267,6 +318,36 @@ export function WorkspaceShell() {
     await requestJson(`/api/${kind}s/${id}/restore`, { method: "POST" });
     await loadTree();
     setNotice("内容已恢复");
+  }
+
+  async function createInvite() {
+    if (!workspace || workspace.type !== "team") return;
+    setInviteBusy(true);
+    setInviteCopied(false);
+    try {
+      const invite = await requestJson<InviteDetails>("/api/invites", {
+        method: "POST",
+        body: JSON.stringify({ workspaceId: workspace.id }),
+      });
+      setInviteDetails(invite);
+      setNotice("团队邀请链接已生成");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "邀请链接生成失败");
+    } finally {
+      setInviteBusy(false);
+    }
+  }
+
+  async function copyInvite() {
+    if (!inviteDetails) return;
+    const link = `${window.location.origin}/?invite=${encodeURIComponent(inviteDetails.token)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setInviteCopied(true);
+      setNotice("邀请链接已复制");
+    } catch {
+      setNotice("复制失败，请手动选择邀请链接");
+    }
   }
 
   function selectView(nextView: View) {
@@ -485,6 +566,22 @@ export function WorkspaceShell() {
             </div>
             {view !== "trash" && (
               <div className="create-actions">
+                {workspace?.type === "team" &&
+                  (workspace.role === "owner" ||
+                    workspace.role === "admin") && (
+                    <button
+                      className="secondary-button"
+                      onClick={() => void createInvite()}
+                      disabled={inviteBusy}
+                    >
+                      {inviteBusy ? (
+                        <LoaderCircle className="spin" size={17} />
+                      ) : (
+                        <UserPlus size={17} />
+                      )}
+                      邀请伙伴
+                    </button>
+                  )}
                 <button
                   className="secondary-button"
                   onClick={() => setCreateMode("folder")}
@@ -678,6 +775,46 @@ export function WorkspaceShell() {
           )}
         </section>
       </main>
+
+      {inviteDetails ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            className="invite-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invite-dialog-title"
+          >
+            <button
+              className="dialog-close icon-button"
+              onClick={() => setInviteDetails(null)}
+              aria-label="关闭邀请窗口"
+            >
+              <X size={18} />
+            </button>
+            <span className="dialog-mark">
+              <UserPlus size={22} />
+            </span>
+            <span className="eyebrow">TEAM INVITATION</span>
+            <h2 id="invite-dialog-title">邀请伙伴加入 {inviteDetails.workspaceName}</h2>
+            <p>
+              通过链接加入的访客会成为团队成员，可以看到团队文件夹和文档，并参与实时编辑。
+            </p>
+            <label className="invite-link-field">
+              <span>七天内有效 · 最多 {inviteDetails.maxUses} 人使用</span>
+              <input
+                readOnly
+                value={`${window.location.origin}/?invite=${encodeURIComponent(inviteDetails.token)}`}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </label>
+            <button className="primary-button invite-copy" onClick={() => void copyInvite()}>
+              {inviteCopied ? <Check size={17} /> : <Copy size={17} />}
+              {inviteCopied ? "已复制邀请链接" : "复制邀请链接"}
+            </button>
+            <small>请只把链接发给可信的人；链接本身就是加入凭证。</small>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

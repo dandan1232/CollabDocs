@@ -9,6 +9,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 const PERSONAL_STORAGE_LIMIT = BigInt(100 * 1024 * 1024);
 const TEAM_STORAGE_LIMIT = BigInt(1024 * 1024 * 1024);
+const INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+const INVITE_MAX_USES = 20;
 
 const sessionGuestInclude = {
   memberships: {
@@ -59,7 +61,7 @@ export class GuestServiceError extends Error {
   }
 }
 
-function createSecret(prefix: "cdg" | "cdr"): string {
+function createSecret(prefix: "cdg" | "cdr" | "cdi"): string {
   return `${prefix}_${randomBytes(32).toString("base64url")}`;
 }
 
@@ -255,6 +257,142 @@ export async function createTeamWorkspace(
   return serializeSession(
     await findSessionByGuestId(database, session.guest.id),
   );
+}
+
+export async function issueWorkspaceInvite(
+  database: PrismaClient,
+  credential: string | undefined,
+  workspaceId: string,
+): Promise<{
+  token: string;
+  workspaceName: string;
+  expiresAt: string;
+  maxUses: number;
+}> {
+  const session = await requireGuestSession(database, credential);
+  const membership = await database.workspaceMember.findUnique({
+    where: {
+      workspaceId_guestId: {
+        workspaceId,
+        guestId: session.guest.id,
+      },
+    },
+    include: { workspace: true },
+  });
+
+  if (
+    !membership ||
+    (membership.role !== WorkspaceRole.OWNER &&
+      membership.role !== WorkspaceRole.ADMIN)
+  ) {
+    throw new GuestServiceError(
+      "INVITE_PERMISSION_DENIED",
+      "只有团队所有者或管理员可以邀请成员。",
+      403,
+    );
+  }
+
+  if (
+    membership.workspace.type !== WorkspaceType.TEAM ||
+    membership.workspace.deletedAt
+  ) {
+    throw new GuestServiceError(
+      "TEAM_WORKSPACE_REQUIRED",
+      "只有有效的团队空间可以生成邀请链接。",
+      400,
+    );
+  }
+
+  const token = createSecret("cdi");
+  const expiresAt = new Date(Date.now() + INVITE_LIFETIME_MS);
+  await database.inviteToken.create({
+    data: {
+      tokenHash: hashSecret(token),
+      workspaceId,
+      createdById: session.guest.id,
+      expiresAt,
+      maxUses: INVITE_MAX_USES,
+    },
+  });
+
+  return {
+    token,
+    workspaceName: membership.workspace.name,
+    expiresAt: expiresAt.toISOString(),
+    maxUses: INVITE_MAX_USES,
+  };
+}
+
+export async function acceptWorkspaceInvite(
+  database: PrismaClient,
+  credential: string | undefined,
+  token: string,
+): Promise<{ session: GuestSession; workspaceId: string }> {
+  const session = await requireGuestSession(database, credential);
+  if (!token.startsWith("cdi_") || token.length > 80) {
+    throw new GuestServiceError(
+      "INVALID_INVITE",
+      "邀请链接无效或已经失效。",
+      400,
+    );
+  }
+
+  const invite = await database.inviteToken.findUnique({
+    where: { tokenHash: hashSecret(token) },
+    include: { workspace: true },
+  });
+  const expired = invite?.expiresAt && invite.expiresAt <= new Date();
+  const exhausted =
+    invite?.maxUses !== null &&
+    invite?.maxUses !== undefined &&
+    invite.useCount >= invite.maxUses;
+
+  if (
+    !invite ||
+    invite.revokedAt ||
+    invite.workspace.deletedAt ||
+    invite.workspace.type !== WorkspaceType.TEAM ||
+    expired ||
+    exhausted
+  ) {
+    throw new GuestServiceError(
+      "INVALID_INVITE",
+      "邀请链接无效、已过期或使用次数已达上限。",
+      400,
+    );
+  }
+
+  const existingMembership = await database.workspaceMember.findUnique({
+    where: {
+      workspaceId_guestId: {
+        workspaceId: invite.workspaceId,
+        guestId: session.guest.id,
+      },
+    },
+  });
+
+  if (!existingMembership) {
+    await database.$transaction([
+      database.workspaceMember.create({
+        data: {
+          workspaceId: invite.workspaceId,
+          guestId: session.guest.id,
+          role: WorkspaceRole.MEMBER,
+        },
+      }),
+      database.inviteToken.update({
+        where: { id: invite.id },
+        data: { useCount: { increment: 1 } },
+      }),
+    ]);
+  }
+
+  return {
+    session: serializeSession(
+      await findSessionByGuestId(database, session.guest.id),
+    ),
+    workspaceId: invite.workspaceId,
+  };
 }
 
 export async function issueWorkspaceRecoveryKey(
