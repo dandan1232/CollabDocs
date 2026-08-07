@@ -130,11 +130,14 @@ export function WorkspaceShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
-  const [inviteDetails, setInviteDetails] = useState<InviteDetails | null>(null);
+  const [inviteDetails, setInviteDetails] = useState<InviteDetails | null>(
+    null,
+  );
   const [inviteCopied, setInviteCopied] = useState(false);
   const [notice, setNotice] = useState("正在准备你的工作室…");
   const [dark, setDark] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const [activeShareToken, setActiveShareToken] = useState<string | null>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -160,6 +163,7 @@ export function WorkspaceShell() {
 
         const url = new URL(window.location.href);
         const inviteToken = url.searchParams.get("invite");
+        const shareToken = url.searchParams.get("share");
         if (inviteToken) {
           try {
             const accepted = await requestJson<{
@@ -185,6 +189,31 @@ export function WorkspaceShell() {
               {},
               "",
               `${url.pathname}${url.search}${url.hash}`,
+            );
+          }
+        } else if (shareToken) {
+          try {
+            const shared = await requestJson<{
+              documentId: string;
+              documentTitle: string;
+              permission: "view" | "edit";
+            }>("/api/shares/resolve", {
+              method: "POST",
+              body: JSON.stringify({ token: shareToken }),
+            });
+            if (!active) return;
+            setSession(nextSession);
+            setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
+            setActiveShareToken(shareToken);
+            setActiveDocumentId(shared.documentId);
+            setNotice(
+              `已通过${shared.permission === "edit" ? "编辑" : "只读"}链接打开《${shared.documentTitle}》`,
+            );
+          } catch (error) {
+            setSession(nextSession);
+            setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
+            setNotice(
+              error instanceof Error ? error.message : "分享链接无法使用",
             );
           }
         } else {
@@ -368,10 +397,21 @@ export function WorkspaceShell() {
     return (
       <DocumentStudio
         documentId={activeDocumentId}
+        shareToken={activeShareToken ?? undefined}
         dark={dark}
         onToggleTheme={toggleTheme}
         onClose={() => {
           setActiveDocumentId(null);
+          if (activeShareToken) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("share");
+            window.history.replaceState(
+              {},
+              "",
+              `${url.pathname}${url.search}${url.hash}`,
+            );
+            setActiveShareToken(null);
+          }
           void loadTree();
         }}
       />
@@ -795,7 +835,9 @@ export function WorkspaceShell() {
               <UserPlus size={22} />
             </span>
             <span className="eyebrow">TEAM INVITATION</span>
-            <h2 id="invite-dialog-title">邀请伙伴加入 {inviteDetails.workspaceName}</h2>
+            <h2 id="invite-dialog-title">
+              邀请伙伴加入 {inviteDetails.workspaceName}
+            </h2>
             <p>
               通过链接加入的访客会成为团队成员，可以看到团队文件夹和文档，并参与实时编辑。
             </p>
@@ -807,7 +849,10 @@ export function WorkspaceShell() {
                 onFocus={(event) => event.currentTarget.select()}
               />
             </label>
-            <button className="primary-button invite-copy" onClick={() => void copyInvite()}>
+            <button
+              className="primary-button invite-copy"
+              onClick={() => void copyInvite()}
+            >
               {inviteCopied ? <Check size={17} /> : <Copy size={17} />}
               {inviteCopied ? "已复制邀请链接" : "复制邀请链接"}
             </button>

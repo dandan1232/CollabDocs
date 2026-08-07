@@ -5,6 +5,7 @@ import {
   requireGuestSession,
   type GuestSession,
 } from "./guest-service";
+import { requireDocumentAccess } from "./share-service";
 
 const RECYCLE_BIN_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -399,6 +400,7 @@ export async function getDocumentForEditing(
   database: PrismaClient,
   credential: string | undefined,
   documentId: string,
+  shareToken?: string,
 ) {
   const document = await database.document.findUnique({
     where: { id: documentId },
@@ -419,10 +421,12 @@ export async function getDocumentForEditing(
     );
   }
 
-  const session = await requireWorkspaceAccess(
+  const access = await requireDocumentAccess(
     database,
     credential,
-    document.workspaceId,
+    documentId,
+    shareToken,
+    "view",
   );
 
   return {
@@ -442,7 +446,11 @@ export async function getDocumentForEditing(
       ...document.workspace,
       type: document.workspace.type.toLowerCase(),
     },
-    viewer: session.guest,
+    viewer: access.session.guest,
+    access: {
+      permission: access.permission,
+      canShare: access.canShare,
+    },
   };
 }
 
@@ -451,6 +459,7 @@ export async function saveDocumentState(
   credential: string | undefined,
   documentId: string,
   mutation: EditorDocumentMutation,
+  shareToken?: string,
 ) {
   const document = await database.document.findUnique({
     where: { id: documentId },
@@ -465,10 +474,12 @@ export async function saveDocumentState(
     );
   }
 
-  const session = await requireWorkspaceAccess(
+  const access = await requireDocumentAccess(
     database,
     credential,
-    document.workspaceId,
+    documentId,
+    shareToken,
+    "edit",
   );
 
   return database.$transaction(async (transaction) => {
@@ -484,7 +495,7 @@ export async function saveDocumentState(
         isWide: mutation.isWide,
         plainText: mutation.plainText,
         contentVersion: { increment: 1 },
-        updatedById: session.guest.id,
+        updatedById: access.session.guest.id,
       },
     });
 

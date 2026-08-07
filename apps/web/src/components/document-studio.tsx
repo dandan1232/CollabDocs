@@ -7,12 +7,15 @@ import {
   ChevronRight,
   Cloud,
   CloudOff,
+  Copy,
+  Eye,
   HardDrive,
   LoaderCircle,
   Maximize2,
   Moon,
   PenLine,
   RefreshCw,
+  Share2,
   Sun,
   Type,
   Wifi,
@@ -54,6 +57,17 @@ type EditorDocument = {
     avatarUrl: string;
     presenceColor: string;
   };
+  access: {
+    permission: "view" | "edit";
+    canShare: boolean;
+  };
+};
+
+type ShareDetails = {
+  token: string;
+  documentTitle: string;
+  permission: "view" | "edit";
+  expiresAt: string;
 };
 
 type SavedDocument = Pick<
@@ -68,13 +82,7 @@ type SaveDraft = EditorSnapshot & {
 };
 
 type SaveStatus =
-  | "loading"
-  | "pending"
-  | "saving"
-  | "saved"
-  | "offline"
-  | "error"
-  | "conflict";
+  "loading" | "pending" | "saving" | "saved" | "offline" | "error" | "conflict";
 
 class RequestError extends Error {
   constructor(
@@ -119,11 +127,13 @@ const fontOptions: Array<{
 
 export function DocumentStudio({
   documentId,
+  shareToken,
   dark,
   onToggleTheme,
   onClose,
 }: {
   documentId: string;
+  shareToken?: string;
   dark: boolean;
   onToggleTheme: () => void;
   onClose: () => void;
@@ -146,6 +156,13 @@ export function DocumentStudio({
   );
   const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUser[]>([]);
   const [inspectedUser, setInspectedUser] = useState<RealtimeUser | null>(null);
+  const [sharePermission, setSharePermission] = useState<"view" | "edit">(
+    "edit",
+  );
+  const [shareDetails, setShareDetails] = useState<ShareDetails | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   const draftRef = useRef<SaveDraft | null>(null);
   const versionRef = useRef(0);
@@ -204,6 +221,9 @@ export function DocumentStudio({
             ...draft,
             expectedVersion,
           }),
+          headers: shareToken
+            ? { "x-collabdocs-share": shareToken }
+            : undefined,
         },
       );
       versionRef.current = saved.contentVersion;
@@ -245,7 +265,7 @@ export function DocumentStudio({
         );
       }
     }
-  }, [documentId]);
+  }, [documentId, shareToken]);
 
   useEffect(() => {
     flushSaveRef.current = flushSave;
@@ -297,6 +317,7 @@ export function DocumentStudio({
       setSaveMessage("正在展开文档…");
       return requestJson<EditorDocument>(`/api/documents/${documentId}`, {
         signal,
+        headers: shareToken ? { "x-collabdocs-share": shareToken } : undefined,
       })
         .then((nextDocument) => {
           setDocument(nextDocument);
@@ -331,7 +352,7 @@ export function DocumentStudio({
           setSaveMessage("文档加载失败");
         });
     },
-    [documentId],
+    [documentId, shareToken],
   );
 
   useEffect(() => {
@@ -376,18 +397,21 @@ export function DocumentStudio({
   );
 
   function handleTitleChange(event: ChangeEvent<HTMLInputElement>) {
+    if (document?.access.permission === "view") return;
     const nextTitle = event.target.value;
     setTitle(nextTitle);
     if (nextTitle.trim()) queueSave({ title: nextTitle.trim() });
   }
 
   function handleFontChange(event: ChangeEvent<HTMLSelectElement>) {
+    if (document?.access.permission === "view") return;
     const nextFont = event.target.value as EditorFont;
     setFontFamily(nextFont);
     queueSave({ fontFamily: nextFont });
   }
 
   function toggleWidePage() {
+    if (document?.access.permission === "view") return;
     const nextWide = !isWide;
     setIsWide(nextWide);
     queueSave({ isWide: nextWide });
@@ -397,6 +421,40 @@ export function DocumentStudio({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     await flushSave();
     onClose();
+  }
+
+  async function createShareLink() {
+    setShareBusy(true);
+    setShareCopied(false);
+    try {
+      const shared = await requestJson<ShareDetails>("/api/shares", {
+        method: "POST",
+        body: JSON.stringify({
+          documentId,
+          permission: sharePermission,
+        }),
+      });
+      setShareDetails(shared);
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveMessage(
+        error instanceof Error ? error.message : "分享链接生成失败",
+      );
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function copyShareLink() {
+    if (!shareDetails) return;
+    const link = `${window.location.origin}/?share=${encodeURIComponent(shareDetails.token)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setShareCopied(true);
+    } catch {
+      setSaveStatus("error");
+      setSaveMessage("复制失败，请手动选择分享链接");
+    }
   }
 
   if (loadError) {
@@ -453,14 +511,21 @@ export function DocumentStudio({
           <ChevronRight size={14} />
           <strong>{title || "无标题文档"}</strong>
         </div>
-        <button
-          className={`save-state save-${saveStatus}`}
-          onClick={() => void flushSave()}
-          title={saveMessage}
-        >
-          <SaveIcon status={saveStatus} />
-          <span>{saveMessage}</span>
-        </button>
+        {document.access.permission === "view" ? (
+          <span className="readonly-state">
+            <Eye size={15} />
+            只读
+          </span>
+        ) : (
+          <button
+            className={`save-state save-${saveStatus}`}
+            onClick={() => void flushSave()}
+            title={saveMessage}
+          >
+            <SaveIcon status={saveStatus} />
+            <span>{saveMessage}</span>
+          </button>
+        )}
         <div className="editor-presence" aria-label="当前在线成员">
           <span>{Math.max(1, realtimeUsers.length)} 人在线</span>
           <div className="presence-avatars">
@@ -488,6 +553,24 @@ export function DocumentStudio({
               ))}
           </div>
         </div>
+        {document.access.canShare ? (
+          <button
+            className="editor-share-button secondary-button"
+            onClick={() => {
+              setShareDetails(null);
+              setShareCopied(false);
+              setShareDialogOpen(true);
+            }}
+            disabled={shareBusy}
+          >
+            {shareBusy ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <Share2 size={16} />
+            )}
+            <span>分享</span>
+          </button>
+        ) : null}
         <button
           className="icon-button"
           onClick={onToggleTheme}
@@ -505,7 +588,11 @@ export function DocumentStudio({
             <Type size={16} />
           )}
           <span className="sr-only">文档字体</span>
-          <select value={fontFamily} onChange={handleFontChange}>
+          <select
+            value={fontFamily}
+            onChange={handleFontChange}
+            disabled={document.access.permission === "view"}
+          >
             {fontOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -518,6 +605,7 @@ export function DocumentStudio({
           className={isWide ? "is-active" : ""}
           onClick={toggleWidePage}
           aria-pressed={isWide}
+          disabled={document.access.permission === "view"}
         >
           <Maximize2 size={16} />
           宽页面
@@ -533,12 +621,12 @@ export function DocumentStudio({
           {!online
             ? "离线编辑中"
             : realtimeStatus === "connected"
-            ? "实时协作已连接"
-            : realtimeStatus === "connecting"
-              ? "正在连接实时协作"
-              : realtimeStatus === "unauthorized"
-                ? "协作授权已失效"
-                : "实时协作已断开"}
+              ? "实时协作已连接"
+              : realtimeStatus === "connecting"
+                ? "正在连接实时协作"
+                : realtimeStatus === "unauthorized"
+                  ? "协作授权已失效"
+                  : "实时协作已断开"}
         </span>
         <span
           className={`local-copy-state state-${localPersistenceStatus}`}
@@ -561,6 +649,7 @@ export function DocumentStudio({
             onChange={handleTitleChange}
             onBlur={() => void flushSave()}
             maxLength={240}
+            readOnly={document.access.permission === "view"}
             aria-label="文档标题"
             placeholder="无标题文档"
           />
@@ -588,6 +677,8 @@ export function DocumentStudio({
             initialState={document.state}
             fontFamily={fontFamily}
             viewer={realtimeViewer}
+            permission={document.access.permission}
+            shareToken={shareToken}
             onChange={handleEditorChange}
             onBlur={() => void flushSave()}
             onStatusChange={setRealtimeStatus}
@@ -600,9 +691,11 @@ export function DocumentStudio({
         <footer className="document-footer">
           <span>{characterCount} 字</span>
           <span>
-            {online
-              ? "自动保存 · Ctrl/⌘ + S 立即保存"
-              : "离线更改保存在本机 · 联网后自动合并"}
+            {document.access.permission === "view"
+              ? "只读分享 · 内容会随协作者实时更新"
+              : online
+                ? "自动保存 · Ctrl/⌘ + S 立即保存"
+                : "离线更改保存在本机 · 联网后自动合并"}
           </span>
         </footer>
       </section>
@@ -630,6 +723,89 @@ export function DocumentStudio({
               正在这篇文档中
             </span>
           </div>
+        </div>
+      ) : null}
+
+      {shareDialogOpen ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            className="invite-dialog share-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-dialog-title"
+          >
+            <button
+              className="dialog-close icon-button"
+              onClick={() => setShareDialogOpen(false)}
+              aria-label="关闭分享窗口"
+            >
+              ×
+            </button>
+            <span className="dialog-mark">
+              <Share2 size={22} />
+            </span>
+            <span className="eyebrow">DOCUMENT SHARE</span>
+            <h2 id="share-dialog-title">分享《{document.title}》</h2>
+            <p>获得链接的人会生成自己的随机头像和昵称，只能访问这一篇文档。</p>
+            <div className="share-permission-switch" aria-label="分享权限">
+              <button
+                className={sharePermission === "view" ? "is-active" : ""}
+                onClick={() => {
+                  setSharePermission("view");
+                  setShareDetails(null);
+                  setShareCopied(false);
+                }}
+              >
+                仅查看
+              </button>
+              <button
+                className={sharePermission === "edit" ? "is-active" : ""}
+                onClick={() => {
+                  setSharePermission("edit");
+                  setShareDetails(null);
+                  setShareCopied(false);
+                }}
+              >
+                可编辑
+              </button>
+            </div>
+            {shareDetails ? (
+              <>
+                <label className="invite-link-field">
+                  <span>
+                    七天内有效 · 当前为
+                    {shareDetails.permission === "edit" ? "可编辑" : "仅查看"}
+                  </span>
+                  <input
+                    readOnly
+                    value={`${window.location.origin}/?share=${encodeURIComponent(shareDetails.token)}`}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
+                <button
+                  className="primary-button invite-copy"
+                  onClick={() => void copyShareLink()}
+                >
+                  {shareCopied ? <Check size={17} /> : <Copy size={17} />}
+                  {shareCopied ? "已复制分享链接" : "复制分享链接"}
+                </button>
+              </>
+            ) : (
+              <button
+                className="primary-button invite-copy"
+                onClick={() => void createShareLink()}
+                disabled={shareBusy}
+              >
+                {shareBusy ? (
+                  <LoaderCircle className="spin" size={17} />
+                ) : (
+                  <Share2 size={17} />
+                )}
+                生成{sharePermission === "edit" ? "可编辑" : "只读"}链接
+              </button>
+            )}
+            <small>分享链接是访问凭证，请只发送给可信的人。</small>
+          </section>
         </div>
       ) : null}
     </main>

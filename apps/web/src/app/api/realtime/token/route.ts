@@ -15,6 +15,7 @@ export async function GET(request: Request) {
       getDatabase(),
       await readGuestCredential(),
       documentId,
+      request.headers.get("x-collabdocs-share") ?? undefined,
     );
 
     return Response.json(result, {

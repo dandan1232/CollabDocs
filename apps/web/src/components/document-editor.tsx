@@ -53,6 +53,8 @@ type DocumentEditorProps = {
   initialState: string | null;
   fontFamily: EditorFont;
   viewer: RealtimeUser;
+  permission: "view" | "edit";
+  shareToken?: string;
   onChange: (snapshot: EditorSnapshot) => void;
   onBlur: () => void;
   onStatusChange: (status: RealtimeStatus) => void;
@@ -84,10 +86,16 @@ function getRealtimeUrl(): string {
   return `${protocol}//${window.location.host}/realtime`;
 }
 
-async function requestRealtimeToken(documentId: string): Promise<string> {
+async function requestRealtimeToken(
+  documentId: string,
+  shareToken?: string,
+): Promise<string> {
   const response = await fetch(
     `/api/realtime/token?documentId=${encodeURIComponent(documentId)}`,
-    { cache: "no-store" },
+    {
+      cache: "no-store",
+      headers: shareToken ? { "x-collabdocs-share": shareToken } : undefined,
+    },
   );
   const data = (await response.json()) as {
     token?: string;
@@ -106,6 +114,8 @@ export function DocumentEditor({
   initialState,
   fontFamily,
   viewer,
+  permission,
+  shareToken,
   onChange,
   onBlur,
   onStatusChange,
@@ -126,7 +136,7 @@ export function DocumentEditor({
       url: getRealtimeUrl(),
       name: documentId,
       document: yDocument,
-      token: () => requestRealtimeToken(documentId),
+      token: () => requestRealtimeToken(documentId, shareToken),
       flushDelay: 40,
       onStatus: ({ status }) => onStatusChange(status),
       onAuthenticated: () => onStatusChange("connected"),
@@ -142,7 +152,14 @@ export function DocumentEditor({
     });
     nextProvider.setAwarenessField("user", viewer);
     return nextProvider;
-  }, [documentId, onStatusChange, onUsersChange, viewer, yDocument]);
+  }, [
+    documentId,
+    onStatusChange,
+    onUsersChange,
+    shareToken,
+    viewer,
+    yDocument,
+  ]);
 
   const localPersistence = useMemo(() => {
     try {
@@ -180,6 +197,7 @@ export function DocumentEditor({
     {
       immediatelyRender: false,
       shouldRerenderOnTransaction: false,
+      editable: permission === "edit",
       extensions: [
         StarterKit.configure({ undoRedo: false }),
         Collaboration.configure({ document: yDocument }),
@@ -215,12 +233,14 @@ export function DocumentEditor({
         },
       },
       onCreate: ({ editor: currentEditor }) => {
+        if (permission === "view") return;
         onChange({
           state: encodeBase64(Y.encodeStateAsUpdate(yDocument)),
           plainText: currentEditor.getText({ blockSeparator: "\n" }),
         });
       },
       onUpdate: ({ editor: currentEditor }) => {
+        if (permission === "view") return;
         onChange({
           state: encodeBase64(Y.encodeStateAsUpdate(yDocument)),
           plainText: currentEditor.getText({ blockSeparator: "\n" }),
@@ -228,7 +248,7 @@ export function DocumentEditor({
       },
       onBlur,
     },
-    [provider, yDocument],
+    [permission, provider, yDocument],
   );
 
   useEffect(
@@ -242,7 +262,11 @@ export function DocumentEditor({
 
   return (
     <div className={`document-editor editor-font-${fontFamily}`}>
-      {editor ? (
+      {permission === "view" ? (
+        <div className="document-readonly-banner">
+          只读分享 · 内容更新会实时显示
+        </div>
+      ) : editor ? (
         <EditorToolbar editor={editor} />
       ) : (
         <div className="editor-toolbar is-loading" aria-hidden="true" />

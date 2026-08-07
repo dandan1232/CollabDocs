@@ -43,7 +43,7 @@ const documentFonts = {
 } as const;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ documentId: string }> },
 ) {
   try {
@@ -52,6 +52,7 @@ export async function GET(
       getDatabase(),
       await readGuestCredential(),
       documentIdSchema.parse(rawDocumentId),
+      request.headers.get("x-collabdocs-share") ?? undefined,
     );
 
     return Response.json(document);
@@ -76,6 +77,7 @@ export async function PUT(
         fontFamily: documentFonts[input.fontFamily],
         state: Buffer.from(input.state, "base64"),
       },
+      request.headers.get("x-collabdocs-share") ?? undefined,
     );
 
     return Response.json({

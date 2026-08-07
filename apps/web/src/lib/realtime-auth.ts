@@ -1,7 +1,8 @@
-import { type PrismaClient } from "@collabdocs/db";
+import { SharePermission, type PrismaClient } from "@collabdocs/db";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { GuestServiceError, requireGuestSession } from "./guest-service";
+import { requireActiveShareById, requireDocumentAccess } from "./share-service";
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 
@@ -9,6 +10,7 @@ type RealtimeTokenPayload = {
   guestId: string;
   documentId: string;
   expiresAt: number;
+  shareId?: string;
 };
 
 function credentialHash(credential: string): string {
@@ -30,7 +32,8 @@ function parsePayload(encodedPayload: string): RealtimeTokenPayload {
     if (
       typeof value.guestId !== "string" ||
       typeof value.documentId !== "string" ||
-      typeof value.expiresAt !== "number"
+      typeof value.expiresAt !== "number" ||
+      (value.shareId !== undefined && typeof value.shareId !== "string")
     ) {
       throw new Error("Invalid payload");
     }
@@ -49,6 +52,7 @@ export async function issueRealtimeToken(
   database: PrismaClient,
   credential: string | undefined,
   documentId: string,
+  shareToken?: string,
 ) {
   if (!credential) {
     throw new GuestServiceError(
@@ -59,29 +63,19 @@ export async function issueRealtimeToken(
   }
 
   const session = await requireGuestSession(database, credential);
-  const document = await database.document.findUnique({
-    where: { id: documentId },
-    select: { workspaceId: true, deletedAt: true },
-  });
-
-  if (
-    !document ||
-    document.deletedAt ||
-    !session.workspaces.some(
-      (workspace) => workspace.id === document.workspaceId,
-    )
-  ) {
-    throw new GuestServiceError(
-      "DOCUMENT_ACCESS_DENIED",
-      "你没有访问这个文档的权限。",
-      403,
-    );
-  }
+  const access = await requireDocumentAccess(
+    database,
+    credential,
+    documentId,
+    shareToken,
+    "view",
+  );
 
   const payload: RealtimeTokenPayload = {
     guestId: session.guest.id,
     documentId,
     expiresAt: Date.now() + TOKEN_TTL_MS,
+    ...(access.shareId ? { shareId: access.shareId } : {}),
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
     "base64url",
@@ -128,19 +122,7 @@ export async function verifyRealtimeToken(
       memberships: { select: { workspaceId: true } },
     },
   });
-  const document = await database.document.findUnique({
-    where: { id: documentId },
-    select: { workspaceId: true, deletedAt: true },
-  });
-
-  if (
-    !guest ||
-    !document ||
-    document.deletedAt ||
-    !guest.memberships.some(
-      (membership) => membership.workspaceId === document.workspaceId,
-    )
-  ) {
+  if (!guest) {
     throw new GuestServiceError(
       "DOCUMENT_ACCESS_DENIED",
       "你没有访问这个文档的权限。",
@@ -162,10 +144,42 @@ export async function verifyRealtimeToken(
     );
   }
 
+  const document = await database.document.findUnique({
+    where: { id: documentId },
+    select: { workspaceId: true, deletedAt: true },
+  });
+
+  let readOnly = false;
+  let authorized = false;
+  if (guest && document && !document.deletedAt) {
+    if (payload.shareId) {
+      const share = await requireActiveShareById(
+        database,
+        payload.shareId,
+        documentId,
+      );
+      readOnly = share.permission === SharePermission.VIEW;
+      authorized = true;
+    } else {
+      authorized = guest.memberships.some(
+        (membership) => membership.workspaceId === document.workspaceId,
+      );
+    }
+  }
+
+  if (!document || document.deletedAt || !authorized) {
+    throw new GuestServiceError(
+      "DOCUMENT_ACCESS_DENIED",
+      "你没有访问这个文档的权限。",
+      403,
+    );
+  }
+
   return {
     id: guest.id,
     nickname: guest.nickname,
     avatarUrl: `/api/avatars/${encodeURIComponent(guest.avatarSeed)}`,
     presenceColor: guest.presenceColor,
+    readOnly,
   };
 }

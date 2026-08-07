@@ -21,6 +21,7 @@ describe("realtime authorization", () => {
             nickname: "松墨",
             avatarUrl: "/api/avatars/seed",
             presenceColor: "#586B4C",
+            readOnly: false,
           },
         }),
         { status: 200 },
@@ -33,7 +34,9 @@ describe("realtime authorization", () => {
         "018f5f70-2f55-7ee3-8f21-118cb0bb3c50",
         fetcher as typeof fetch,
       ),
-    ).resolves.toMatchObject({ user: { nickname: "松墨" } });
+    ).resolves.toMatchObject({
+      user: { nickname: "松墨", readOnly: false },
+    });
   });
 
   it("rejects invalid document identifiers before calling the web service", async () => {

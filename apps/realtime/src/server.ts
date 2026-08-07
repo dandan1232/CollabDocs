@@ -10,6 +10,7 @@ type RealtimeUser = {
   nickname: string;
   avatarUrl: string;
   presenceColor: string;
+  readOnly: boolean;
 };
 
 type RealtimeContext = {
@@ -64,8 +65,15 @@ export function createRealtimeServer(
     maxDebounce: 10_000,
     timeout: 30_000,
     websocketOptions: { maxPayload: 2 * 1024 * 1024 },
-    async onAuthenticate({ token, documentName }) {
-      return authorizeConnection(internalWebUrl, token, documentName, fetcher);
+    async onAuthenticate({ token, documentName, connectionConfig }) {
+      const context = await authorizeConnection(
+        internalWebUrl,
+        token,
+        documentName,
+        fetcher,
+      );
+      connectionConfig.readOnly = context.user.readOnly;
+      return context;
     },
     async onRequest({ request, response }) {
       if (request.url === "/health") {
