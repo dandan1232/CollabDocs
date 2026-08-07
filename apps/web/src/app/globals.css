@@ -14,6 +14,8 @@
   --terracotta: #c96f48;
   --terracotta-deep: #9f4d2f;
   --terracotta-wash: #ecd5c8;
+  --ochre-deep: #80601e;
+  --ochre-wash: #eadfbe;
   --line: #d8d2c5;
   --line-strong: #c7c0b1;
   --shadow-paper: 0 1px 1px #4b3f2b0a, 0 12px 32px #4b3f2b12;
@@ -36,6 +38,8 @@
   --terracotta: #df8c67;
   --terracotta-deep: #efab8c;
   --terracotta-wash: #4b3328;
+  --ochre-deep: #e0c079;
+  --ochre-wash: #473d25;
   --line: #3d4237;
   --line-strong: #505648;
   --shadow-paper: none;
@@ -1187,6 +1191,11 @@ select:focus-visible {
   color: var(--moss-deep);
 }
 
+.save-state.save-offline {
+  background: var(--ochre-wash);
+  color: var(--ochre-deep);
+}
+
 .save-state.save-error,
 .save-state.save-conflict {
   background: var(--terracotta-wash);
@@ -1273,12 +1282,14 @@ select:focus-visible {
 }
 
 .editor-stage-note,
-.realtime-state {
+.realtime-state,
+.local-copy-state {
   color: var(--ink-faint);
   font-size: 0.67rem;
 }
 
-.realtime-state {
+.realtime-state,
+.local-copy-state {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -1289,6 +1300,19 @@ select:focus-visible {
 }
 
 .realtime-state.state-unauthorized {
+  color: var(--terracotta-deep);
+}
+
+.realtime-state.state-offline,
+.local-copy-state.state-loading {
+  color: var(--ochre-deep);
+}
+
+.local-copy-state.state-ready {
+  color: var(--moss-deep);
+}
+
+.local-copy-state.state-unavailable {
   color: var(--terracotta-deep);
 }
 
@@ -1730,7 +1754,8 @@ select:focus-visible {
   }
 
   .editor-stage-note,
-  .realtime-state {
+  .realtime-state,
+  .local-copy-state {
     display: none;
   }
 

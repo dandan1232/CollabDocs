@@ -26,6 +26,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 
 export type EditorFont = "sans" | "serif" | "handwriting" | "mono";
@@ -45,6 +46,8 @@ export type RealtimeUser = {
 export type RealtimeStatus =
   "connecting" | "connected" | "disconnected" | "unauthorized";
 
+export type LocalPersistenceStatus = "loading" | "ready" | "unavailable";
+
 type DocumentEditorProps = {
   documentId: string;
   initialState: string | null;
@@ -53,6 +56,7 @@ type DocumentEditorProps = {
   onChange: (snapshot: EditorSnapshot) => void;
   onBlur: () => void;
   onStatusChange: (status: RealtimeStatus) => void;
+  onLocalPersistenceChange: (status: LocalPersistenceStatus) => void;
   onUsersChange: (users: RealtimeUser[]) => void;
   onInspectUser: (user: RealtimeUser) => void;
 };
@@ -105,6 +109,7 @@ export function DocumentEditor({
   onChange,
   onBlur,
   onStatusChange,
+  onLocalPersistenceChange,
   onUsersChange,
   onInspectUser,
 }: DocumentEditorProps) {
@@ -138,6 +143,38 @@ export function DocumentEditor({
     nextProvider.setAwarenessField("user", viewer);
     return nextProvider;
   }, [documentId, onStatusChange, onUsersChange, viewer, yDocument]);
+
+  const localPersistence = useMemo(() => {
+    try {
+      return new IndexeddbPersistence(
+        `collabdocs:document:${documentId}`,
+        yDocument,
+      );
+    } catch {
+      return null;
+    }
+  }, [documentId, yDocument]);
+
+  useEffect(() => {
+    if (!localPersistence) {
+      onLocalPersistenceChange("unavailable");
+      return;
+    }
+
+    let active = true;
+    onLocalPersistenceChange("loading");
+    void localPersistence.whenSynced
+      .then(() => {
+        if (active) onLocalPersistenceChange("ready");
+      })
+      .catch(() => {
+        if (active) onLocalPersistenceChange("unavailable");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [localPersistence, onLocalPersistenceChange]);
 
   const editor = useEditor(
     {
@@ -196,10 +233,11 @@ export function DocumentEditor({
 
   useEffect(
     () => () => {
+      localPersistence?.destroy();
       provider.destroy();
       yDocument.destroy();
     },
-    [provider, yDocument],
+    [localPersistence, provider, yDocument],
   );
 
   return (

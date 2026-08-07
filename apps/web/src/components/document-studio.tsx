@@ -6,6 +6,8 @@ import {
   Check,
   ChevronRight,
   Cloud,
+  CloudOff,
+  HardDrive,
   LoaderCircle,
   Maximize2,
   Moon,
@@ -30,6 +32,7 @@ import {
   DocumentEditor,
   type EditorFont,
   type EditorSnapshot,
+  type LocalPersistenceStatus,
   type RealtimeStatus,
   type RealtimeUser,
 } from "./document-editor";
@@ -65,7 +68,13 @@ type SaveDraft = EditorSnapshot & {
 };
 
 type SaveStatus =
-  "loading" | "pending" | "saving" | "saved" | "error" | "conflict";
+  | "loading"
+  | "pending"
+  | "saving"
+  | "saved"
+  | "offline"
+  | "error"
+  | "conflict";
 
 class RequestError extends Error {
   constructor(
@@ -130,6 +139,11 @@ export function DocumentStudio({
   const [saveMessage, setSaveMessage] = useState("正在展开文档…");
   const [realtimeStatus, setRealtimeStatus] =
     useState<RealtimeStatus>("connecting");
+  const [localPersistenceStatus, setLocalPersistenceStatus] =
+    useState<LocalPersistenceStatus>("loading");
+  const [online, setOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine,
+  );
   const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUser[]>([]);
   const [inspectedUser, setInspectedUser] = useState<RealtimeUser | null>(null);
 
@@ -162,6 +176,12 @@ export function DocumentStudio({
   const flushSave = useCallback(async () => {
     const draft = draftRef.current;
     if (!draft || revisionRef.current === savedRevisionRef.current) return;
+
+    if (!navigator.onLine) {
+      setSaveStatus("offline");
+      setSaveMessage("已安全保存在此设备，联网后自动同步");
+      return;
+    }
 
     if (savingRef.current) {
       retryAfterSaveRef.current = true;
@@ -205,6 +225,11 @@ export function DocumentStudio({
         retryAfterSaveRef.current = true;
       }
     } catch (error) {
+      if (!navigator.onLine) {
+        setSaveStatus("offline");
+        setSaveMessage("已安全保存在此设备，联网后自动同步");
+        return;
+      }
       const conflict = error instanceof RequestError && error.status === 409;
       setSaveStatus(conflict ? "conflict" : "error");
       setSaveMessage(
@@ -226,11 +251,37 @@ export function DocumentStudio({
     flushSaveRef.current = flushSave;
   }, [flushSave]);
 
+  useEffect(() => {
+    const handleOnline = () => {
+      setOnline(true);
+      setSaveStatus("pending");
+      setSaveMessage("网络已恢复，正在同步离线更改…");
+      void flushSaveRef.current();
+    };
+    const handleOffline = () => {
+      setOnline(false);
+      setSaveStatus("offline");
+      setSaveMessage("已安全保存在此设备，联网后自动同步");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   const queueSave = useCallback(
     (patch: Partial<SaveDraft>) => {
       if (!draftRef.current) return;
       draftRef.current = { ...draftRef.current, ...patch };
       revisionRef.current += 1;
+      if (!navigator.onLine) {
+        setSaveStatus("offline");
+        setSaveMessage("已安全保存在此设备，联网后自动同步");
+        return;
+      }
       setSaveStatus("pending");
       setSaveMessage("有更改等待保存");
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -471,19 +522,34 @@ export function DocumentStudio({
           <Maximize2 size={16} />
           宽页面
         </button>
-        <span className={`realtime-state state-${realtimeStatus}`}>
-          {realtimeStatus === "connected" ? (
+        <span
+          className={`realtime-state state-${online ? realtimeStatus : "offline"}`}
+        >
+          {online && realtimeStatus === "connected" ? (
             <Wifi size={14} />
           ) : (
             <WifiOff size={14} />
           )}
-          {realtimeStatus === "connected"
+          {!online
+            ? "离线编辑中"
+            : realtimeStatus === "connected"
             ? "实时协作已连接"
             : realtimeStatus === "connecting"
               ? "正在连接实时协作"
               : realtimeStatus === "unauthorized"
                 ? "协作授权已失效"
                 : "实时协作已断开"}
+        </span>
+        <span
+          className={`local-copy-state state-${localPersistenceStatus}`}
+          title="文档副本保存在当前浏览器的 IndexedDB 中"
+        >
+          <HardDrive size={14} />
+          {localPersistenceStatus === "ready"
+            ? "本机副本已就绪"
+            : localPersistenceStatus === "loading"
+              ? "正在准备本机副本"
+              : "本机副本不可用"}
         </span>
       </section>
 
@@ -525,6 +591,7 @@ export function DocumentStudio({
             onChange={handleEditorChange}
             onBlur={() => void flushSave()}
             onStatusChange={setRealtimeStatus}
+            onLocalPersistenceChange={setLocalPersistenceStatus}
             onUsersChange={setRealtimeUsers}
             onInspectUser={setInspectedUser}
           />
@@ -532,7 +599,11 @@ export function DocumentStudio({
 
         <footer className="document-footer">
           <span>{characterCount} 字</span>
-          <span>自动保存 · Ctrl/⌘ + S 立即保存</span>
+          <span>
+            {online
+              ? "自动保存 · Ctrl/⌘ + S 立即保存"
+              : "离线更改保存在本机 · 联网后自动合并"}
+          </span>
         </footer>
       </section>
 
@@ -572,6 +643,7 @@ function SaveIcon({ status }: { status: SaveStatus }) {
   if (status === "error" || status === "conflict") {
     return <AlertTriangle size={15} />;
   }
+  if (status === "offline") return <CloudOff size={15} />;
   if (status === "saved") return <Check size={15} />;
   return <Cloud size={15} />;
 }
