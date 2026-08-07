@@ -1,6 +1,8 @@
 "use client";
 
+import { HocuspocusProvider } from "@hocuspocus/provider";
 import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import {
   EditorContent,
@@ -33,12 +35,26 @@ export type EditorSnapshot = {
   plainText: string;
 };
 
+export type RealtimeUser = {
+  id: string;
+  name: string;
+  color: string;
+  avatar: string;
+};
+
+export type RealtimeStatus =
+  "connecting" | "connected" | "disconnected" | "unauthorized";
+
 type DocumentEditorProps = {
   documentId: string;
   initialState: string | null;
   fontFamily: EditorFont;
+  viewer: RealtimeUser;
   onChange: (snapshot: EditorSnapshot) => void;
   onBlur: () => void;
+  onStatusChange: (status: RealtimeStatus) => void;
+  onUsersChange: (users: RealtimeUser[]) => void;
+  onInspectUser: (user: RealtimeUser) => void;
 };
 
 function decodeBase64(value: string): Uint8Array {
@@ -59,12 +75,38 @@ function encodeBase64(bytes: Uint8Array): string {
   return window.btoa(binary);
 }
 
+function getRealtimeUrl(): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/realtime`;
+}
+
+async function requestRealtimeToken(documentId: string): Promise<string> {
+  const response = await fetch(
+    `/api/realtime/token?documentId=${encodeURIComponent(documentId)}`,
+    { cache: "no-store" },
+  );
+  const data = (await response.json()) as {
+    token?: string;
+    error?: { message?: string };
+  };
+
+  if (!response.ok || !data.token) {
+    throw new Error(data.error?.message ?? "无法建立实时协作连接。");
+  }
+
+  return data.token;
+}
+
 export function DocumentEditor({
   documentId,
   initialState,
   fontFamily,
+  viewer,
   onChange,
   onBlur,
+  onStatusChange,
+  onUsersChange,
+  onInspectUser,
 }: DocumentEditorProps) {
   const yDocument = useMemo(() => {
     const nextDocument = new Y.Doc({ guid: documentId });
@@ -74,6 +116,29 @@ export function DocumentEditor({
     return nextDocument;
   }, [documentId, initialState]);
 
+  const provider = useMemo(() => {
+    const nextProvider = new HocuspocusProvider({
+      url: getRealtimeUrl(),
+      name: documentId,
+      document: yDocument,
+      token: () => requestRealtimeToken(documentId),
+      flushDelay: 40,
+      onStatus: ({ status }) => onStatusChange(status),
+      onAuthenticated: () => onStatusChange("connected"),
+      onAuthenticationFailed: () => onStatusChange("unauthorized"),
+      onAwarenessChange: ({ states }) => {
+        const users = new Map<string, RealtimeUser>();
+        for (const state of states) {
+          const user = state.user as RealtimeUser | undefined;
+          if (user?.id) users.set(user.id, user);
+        }
+        onUsersChange([...users.values()]);
+      },
+    });
+    nextProvider.setAwarenessField("user", viewer);
+    return nextProvider;
+  }, [documentId, onStatusChange, onUsersChange, viewer, yDocument]);
+
   const editor = useEditor(
     {
       immediatelyRender: false,
@@ -81,6 +146,27 @@ export function DocumentEditor({
       extensions: [
         StarterKit.configure({ undoRedo: false }),
         Collaboration.configure({ document: yDocument }),
+        CollaborationCaret.configure({
+          provider,
+          user: viewer,
+          render: (user) => {
+            const caret = window.document.createElement("span");
+            caret.classList.add("collaboration-carets__caret");
+            caret.style.borderColor = user.color;
+
+            const label = window.document.createElement("button");
+            label.type = "button";
+            label.classList.add("collaboration-carets__label");
+            label.style.backgroundColor = user.color;
+            label.textContent = user.name;
+            label.title = `查看 ${user.name}`;
+            label.addEventListener("click", () =>
+              onInspectUser(user as RealtimeUser),
+            );
+            caret.append(label);
+            return caret;
+          },
+        }),
         Placeholder.configure({
           placeholder: "从这里开始。写下想法，稍后邀请伙伴一起补完……",
         }),
@@ -105,14 +191,15 @@ export function DocumentEditor({
       },
       onBlur,
     },
-    [yDocument],
+    [provider, yDocument],
   );
 
   useEffect(
     () => () => {
+      provider.destroy();
       yDocument.destroy();
     },
-    [yDocument],
+    [provider, yDocument],
   );
 
   return (

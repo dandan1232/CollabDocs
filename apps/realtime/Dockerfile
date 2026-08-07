@@ -9,11 +9,19 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @collabdocs/realtime build
 
+FROM base AS production-dependencies
+WORKDIR /workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/realtime/package.json apps/realtime/package.json
+RUN pnpm install --frozen-lockfile --prod --filter @collabdocs/realtime
+
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 ENV REALTIME_PORT=1234
-WORKDIR /app
+WORKDIR /app/apps/realtime
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 collabdocs
+COPY --from=production-dependencies --chown=collabdocs:nodejs /workspace/node_modules /app/node_modules
+COPY --from=production-dependencies --chown=collabdocs:nodejs /workspace/apps/realtime/node_modules ./node_modules
 COPY --from=builder --chown=collabdocs:nodejs /workspace/apps/realtime/dist ./dist
 USER collabdocs
 EXPOSE 1234

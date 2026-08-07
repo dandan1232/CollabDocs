@@ -13,11 +13,14 @@ import {
   RefreshCw,
   Sun,
   Type,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import Image from "next/image";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -27,6 +30,8 @@ import {
   DocumentEditor,
   type EditorFont,
   type EditorSnapshot,
+  type RealtimeStatus,
+  type RealtimeUser,
 } from "./document-editor";
 
 type EditorDocument = {
@@ -123,6 +128,10 @@ export function DocumentStudio({
   const [contentVersion, setContentVersion] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("loading");
   const [saveMessage, setSaveMessage] = useState("正在展开文档…");
+  const [realtimeStatus, setRealtimeStatus] =
+    useState<RealtimeStatus>("connecting");
+  const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUser[]>([]);
+  const [inspectedUser, setInspectedUser] = useState<RealtimeUser | null>(null);
 
   const draftRef = useRef<SaveDraft | null>(null);
   const versionRef = useRef(0);
@@ -132,6 +141,23 @@ export function DocumentStudio({
   const retryAfterSaveRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
+  const viewerId = document?.viewer.id;
+  const viewerName = document?.viewer.nickname;
+  const viewerColor = document?.viewer.presenceColor;
+  const viewerAvatar = document?.viewer.avatarUrl;
+
+  const realtimeViewer = useMemo<RealtimeUser | null>(
+    () =>
+      viewerId && viewerName && viewerColor && viewerAvatar
+        ? {
+            id: viewerId,
+            name: viewerName,
+            color: viewerColor,
+            avatar: viewerAvatar,
+          }
+        : null,
+    [viewerAvatar, viewerColor, viewerId, viewerName],
+  );
 
   const flushSave = useCallback(async () => {
     const draft = draftRef.current;
@@ -384,18 +410,32 @@ export function DocumentStudio({
           <SaveIcon status={saveStatus} />
           <span>{saveMessage}</span>
         </button>
-        <div
-          className="editor-presence"
-          title={`${document.viewer.nickname} 正在编辑`}
-        >
-          <span>仅你</span>
-          <Image
-            src={document.viewer.avatarUrl}
-            alt={document.viewer.nickname}
-            width={32}
-            height={32}
-            unoptimized
-          />
+        <div className="editor-presence" aria-label="当前在线成员">
+          <span>{Math.max(1, realtimeUsers.length)} 人在线</span>
+          <div className="presence-avatars">
+            {(realtimeUsers.length > 0
+              ? realtimeUsers
+              : realtimeViewer
+                ? [realtimeViewer]
+                : []
+            )
+              .slice(0, 4)
+              .map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => setInspectedUser(user)}
+                  title={`查看 ${user.name}`}
+                >
+                  <Image
+                    src={user.avatar}
+                    alt={user.name}
+                    width={32}
+                    height={32}
+                    unoptimized
+                  />
+                </button>
+              ))}
+          </div>
         </div>
         <button
           className="icon-button"
@@ -431,8 +471,19 @@ export function DocumentStudio({
           <Maximize2 size={16} />
           宽页面
         </button>
-        <span className="editor-stage-note">
-          实时协作准备中 · 当前内容已采用 Yjs 格式
+        <span className={`realtime-state state-${realtimeStatus}`}>
+          {realtimeStatus === "connected" ? (
+            <Wifi size={14} />
+          ) : (
+            <WifiOff size={14} />
+          )}
+          {realtimeStatus === "connected"
+            ? "实时协作已连接"
+            : realtimeStatus === "connecting"
+              ? "正在连接实时协作"
+              : realtimeStatus === "unauthorized"
+                ? "协作授权已失效"
+                : "实时协作已断开"}
         </span>
       </section>
 
@@ -448,29 +499,68 @@ export function DocumentStudio({
             placeholder="无标题文档"
           />
           <div className="document-byline">
-            <span
-              className="author-rule"
-              style={{ backgroundColor: document.viewer.presenceColor }}
-            />
-            <span>{document.viewer.nickname} 正在书写</span>
+            <button
+              className="author-inspect"
+              onClick={() =>
+                realtimeViewer ? setInspectedUser(realtimeViewer) : undefined
+              }
+            >
+              <span
+                className="author-rule"
+                style={{ backgroundColor: document.viewer.presenceColor }}
+              />
+              <span>{document.viewer.nickname} 正在书写</span>
+            </button>
             <span>·</span>
             <span>版本 {contentVersion}</span>
           </div>
         </div>
 
-        <DocumentEditor
-          documentId={document.id}
-          initialState={document.state}
-          fontFamily={fontFamily}
-          onChange={handleEditorChange}
-          onBlur={() => void flushSave()}
-        />
+        {realtimeViewer ? (
+          <DocumentEditor
+            documentId={document.id}
+            initialState={document.state}
+            fontFamily={fontFamily}
+            viewer={realtimeViewer}
+            onChange={handleEditorChange}
+            onBlur={() => void flushSave()}
+            onStatusChange={setRealtimeStatus}
+            onUsersChange={setRealtimeUsers}
+            onInspectUser={setInspectedUser}
+          />
+        ) : null}
 
         <footer className="document-footer">
           <span>{characterCount} 字</span>
           <span>自动保存 · Ctrl/⌘ + S 立即保存</span>
         </footer>
       </section>
+
+      {inspectedUser ? (
+        <div className="presence-card" role="dialog" aria-label="协作者信息">
+          <button
+            className="presence-card-close"
+            onClick={() => setInspectedUser(null)}
+            aria-label="关闭协作者信息"
+          >
+            ×
+          </button>
+          <Image
+            src={inspectedUser.avatar}
+            alt=""
+            width={48}
+            height={48}
+            unoptimized
+          />
+          <div>
+            <strong>{inspectedUser.name}</strong>
+            <span>
+              <i style={{ backgroundColor: inspectedUser.color }} />
+              正在这篇文档中
+            </span>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
