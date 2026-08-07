@@ -29,6 +29,7 @@ data/
 uploads/
 *.log
 pnpm-debug.log*
+CollabDocs-*.tar
 
 # Editor and operating system files
 .idea/
