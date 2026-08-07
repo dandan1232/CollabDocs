@@ -1,4 +1,4 @@
-import { type PrismaClient } from "@collabdocs/db";
+import { DocumentFont, type PrismaClient } from "@collabdocs/db";
 
 import {
   GuestServiceError,
@@ -18,6 +18,15 @@ interface DocumentMutation {
   title?: string;
   folderId?: string | null;
   position?: number;
+}
+
+interface EditorDocumentMutation {
+  title: string;
+  fontFamily: DocumentFont;
+  isWide: boolean;
+  plainText: string;
+  state: Uint8Array<ArrayBuffer>;
+  expectedVersion: number;
 }
 
 function recycleAt(deletedAt: Date): Date {
@@ -383,6 +392,134 @@ export async function createDocument(
       createdById: session.guest.id,
       updatedById: session.guest.id,
     },
+  });
+}
+
+export async function getDocumentForEditing(
+  database: PrismaClient,
+  credential: string | undefined,
+  documentId: string,
+) {
+  const document = await database.document.findUnique({
+    where: { id: documentId },
+    include: {
+      collaborationState: {
+        select: { state: true, schemaVersion: true, updatedAt: true },
+      },
+      folder: { select: { id: true, name: true } },
+      workspace: { select: { id: true, name: true, type: true } },
+    },
+  });
+
+  if (!document || document.deletedAt) {
+    throw new GuestServiceError(
+      "DOCUMENT_NOT_FOUND",
+      "文档不存在或已在回收站中。",
+      404,
+    );
+  }
+
+  const session = await requireWorkspaceAccess(
+    database,
+    credential,
+    document.workspaceId,
+  );
+
+  return {
+    id: document.id,
+    title: document.title,
+    fontFamily: document.fontFamily.toLowerCase(),
+    isWide: document.isWide,
+    plainText: document.plainText,
+    contentVersion: document.contentVersion,
+    updatedAt: document.updatedAt,
+    state: document.collaborationState
+      ? Buffer.from(document.collaborationState.state).toString("base64")
+      : null,
+    schemaVersion: document.collaborationState?.schemaVersion ?? 1,
+    folder: document.folder,
+    workspace: {
+      ...document.workspace,
+      type: document.workspace.type.toLowerCase(),
+    },
+    viewer: session.guest,
+  };
+}
+
+export async function saveDocumentState(
+  database: PrismaClient,
+  credential: string | undefined,
+  documentId: string,
+  mutation: EditorDocumentMutation,
+) {
+  const document = await database.document.findUnique({
+    where: { id: documentId },
+    select: { id: true, workspaceId: true, deletedAt: true },
+  });
+
+  if (!document || document.deletedAt) {
+    throw new GuestServiceError(
+      "DOCUMENT_NOT_FOUND",
+      "文档不存在或已在回收站中。",
+      404,
+    );
+  }
+
+  const session = await requireWorkspaceAccess(
+    database,
+    credential,
+    document.workspaceId,
+  );
+
+  return database.$transaction(async (transaction) => {
+    const updated = await transaction.document.updateMany({
+      where: {
+        id: document.id,
+        deletedAt: null,
+        contentVersion: mutation.expectedVersion,
+      },
+      data: {
+        title: mutation.title,
+        fontFamily: mutation.fontFamily,
+        isWide: mutation.isWide,
+        plainText: mutation.plainText,
+        contentVersion: { increment: 1 },
+        updatedById: session.guest.id,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new GuestServiceError(
+        "DOCUMENT_VERSION_CONFLICT",
+        "文档已有较新的版本，请刷新后继续编辑。",
+        409,
+      );
+    }
+
+    await transaction.collaborationState.upsert({
+      where: { documentId: document.id },
+      create: {
+        documentId: document.id,
+        state: mutation.state,
+        schemaVersion: 1,
+      },
+      update: {
+        state: mutation.state,
+        schemaVersion: 1,
+      },
+    });
+
+    return transaction.document.findUniqueOrThrow({
+      where: { id: document.id },
+      select: {
+        id: true,
+        title: true,
+        fontFamily: true,
+        isWide: true,
+        contentVersion: true,
+        updatedAt: true,
+      },
+    });
   });
 }
 

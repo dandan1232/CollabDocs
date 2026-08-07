@@ -69,7 +69,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   color: inherit;
   font: inherit;
 }
@@ -80,7 +81,8 @@ button {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--terracotta) 38%, transparent);
   outline-offset: 2px;
 }
@@ -1092,5 +1094,541 @@ input:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.spin {
+  animation: editor-spin 0.9s linear infinite;
+}
+
+.editor-studio {
+  min-height: 100dvh;
+  background:
+    radial-gradient(
+      circle at 12% 15%,
+      color-mix(in srgb, var(--moss-wash) 58%, transparent),
+      transparent 25rem
+    ),
+    radial-gradient(
+      circle at 88% 4%,
+      color-mix(in srgb, var(--terracotta-wash) 45%, transparent),
+      transparent 24rem
+    ),
+    var(--paper);
+}
+
+.editor-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: grid;
+  min-height: 4.25rem;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem clamp(0.75rem, 2vw, 1.5rem);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper-raised) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.editor-back {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.editor-breadcrumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.editor-breadcrumbs span,
+.editor-breadcrumbs strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-breadcrumbs strong {
+  color: var(--ink);
+  font-weight: 620;
+}
+
+.save-state {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: var(--paper-muted);
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+}
+
+.save-state.save-saved {
+  background: var(--moss-wash);
+  color: var(--moss-deep);
+}
+
+.save-state.save-error,
+.save-state.save-conflict {
+  background: var(--terracotta-wash);
+  color: var(--terracotta-deep);
+}
+
+.editor-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+}
+
+.editor-presence img {
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--paper-raised);
+  border-radius: 50%;
+  background: var(--terracotta-wash);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.editor-controls {
+  position: sticky;
+  top: 4.25rem;
+  z-index: 40;
+  display: flex;
+  min-height: 3.35rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.editor-controls button,
+.font-picker {
+  display: inline-flex;
+  min-height: 2.3rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+.editor-controls button.is-active {
+  border-color: var(--moss);
+  background: var(--moss-wash);
+  color: var(--moss-deep);
+}
+
+.font-picker select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.editor-stage-note {
+  color: var(--ink-faint);
+  font-size: 0.67rem;
+}
+
+.document-page {
+  width: min(calc(100% - 2rem), 52rem);
+  min-height: calc(100dvh - 10rem);
+  margin: 2.25rem auto 5rem;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(
+      90deg,
+      transparent 3.8rem,
+      color-mix(in srgb, var(--terracotta) 15%, transparent) 3.82rem,
+      transparent 3.86rem
+    ),
+    var(--paper-raised);
+  box-shadow: var(--shadow-paper);
+  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.document-page.is-wide {
+  width: min(calc(100% - 2rem), 76rem);
+}
+
+.document-heading-block {
+  padding: clamp(3rem, 8vw, 5.5rem) clamp(2.25rem, 9vw, 6.5rem) 1.25rem;
+}
+
+.document-kicker {
+  color: var(--terracotta-deep);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.document-heading-block > input {
+  display: block;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-hand);
+  font-size: clamp(2.25rem, 5.5vw, 4.25rem);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+
+.document-heading-block > input::placeholder {
+  color: var(--ink-faint);
+}
+
+.document-byline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1.2rem;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
+
+.author-rule {
+  display: inline-block;
+  width: 2.25rem;
+  height: 0.16rem;
+  border-radius: 999px;
+}
+
+.document-editor {
+  position: relative;
+}
+
+.editor-toolbar {
+  position: sticky;
+  top: 7.6rem;
+  z-index: 35;
+  display: flex;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0 auto 1.25rem;
+  padding: 0.35rem;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--paper-raised) 96%, transparent);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--ink) 8%, transparent);
+  backdrop-filter: blur(12px);
+  scrollbar-width: none;
+}
+
+.editor-toolbar.is-loading {
+  width: 20rem;
+  opacity: 0.45;
+}
+
+.editor-toolbar button {
+  display: grid;
+  width: 2.3rem;
+  height: 2.3rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.editor-toolbar button:hover:not(:disabled) {
+  background: var(--paper-muted);
+  color: var(--ink);
+}
+
+.editor-toolbar button.is-active {
+  background: var(--moss-wash);
+  color: var(--moss-deep);
+}
+
+.editor-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.32;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  margin: 0 0.2rem;
+  background: var(--line);
+}
+
+.document-editor .tiptap {
+  min-height: 30rem;
+  padding: 0 clamp(2.25rem, 9vw, 6.5rem) 5rem;
+  outline: 0;
+  color: var(--ink);
+  font-size: 1.06rem;
+  line-height: 1.92;
+  text-wrap: pretty;
+}
+
+.editor-font-sans .tiptap {
+  font-family: var(--font-ui);
+}
+
+.editor-font-serif .tiptap {
+  font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
+}
+
+.editor-font-handwriting .tiptap {
+  font-family: var(--font-hand);
+  font-size: 1.14rem;
+  line-height: 2;
+}
+
+.editor-font-mono .tiptap {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.96rem;
+}
+
+.document-editor .tiptap > *:first-child {
+  margin-top: 0;
+}
+
+.document-editor .tiptap p {
+  margin: 0.8em 0;
+}
+
+.document-editor .tiptap h1,
+.document-editor .tiptap h2,
+.document-editor .tiptap h3 {
+  margin: 1.7em 0 0.65em;
+  font-family: var(--font-hand);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.3;
+}
+
+.document-editor .tiptap h1 {
+  font-size: 2rem;
+}
+
+.document-editor .tiptap h2 {
+  font-size: 1.55rem;
+}
+
+.document-editor .tiptap h3 {
+  font-size: 1.25rem;
+}
+
+.document-editor .tiptap ul,
+.document-editor .tiptap ol {
+  margin: 1em 0;
+  padding-left: 1.55rem;
+}
+
+.document-editor .tiptap li {
+  margin: 0.3em 0;
+  padding-left: 0.2rem;
+}
+
+.document-editor .tiptap blockquote {
+  margin: 1.4em 0;
+  padding: 0.15rem 0 0.15rem 1.15rem;
+  border-left: 0.22rem solid var(--terracotta);
+  color: var(--ink-soft);
+  font-family: var(--font-hand);
+}
+
+.document-editor .tiptap code {
+  padding: 0.12em 0.35em;
+  border-radius: 0.25rem;
+  background: var(--paper-muted);
+  color: var(--terracotta-deep);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.document-editor .tiptap pre {
+  overflow-x: auto;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--line);
+  background: var(--ink);
+  color: var(--paper-raised);
+  line-height: 1.65;
+}
+
+.document-editor .tiptap pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.document-editor .tiptap hr {
+  margin: 2.5rem auto;
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+.document-editor .tiptap p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: var(--ink-faint);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.document-editor .tiptap ::selection {
+  background: color-mix(in srgb, var(--terracotta) 24%, transparent);
+}
+
+.document-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 clamp(2.25rem, 9vw, 6.5rem);
+  padding: 1rem 0 1.4rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-size: 0.68rem;
+}
+
+.editor-fallback {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 2rem;
+  background: var(--paper);
+  text-align: center;
+}
+
+.editor-fallback > div {
+  max-width: 30rem;
+}
+
+.editor-fallback svg {
+  color: var(--terracotta);
+}
+
+.editor-fallback h1 {
+  margin: 1rem 0 0.5rem;
+  font-family: var(--font-hand);
+  font-size: 2rem;
+  font-weight: 500;
+}
+
+.editor-fallback p {
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.editor-fallback > div > div {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.editor-fallback.is-loading {
+  align-content: center;
+  gap: 0.6rem;
+  color: var(--ink-faint);
+  font-family: var(--font-hand);
+}
+
+@keyframes editor-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 48rem) {
+  .editor-topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .editor-breadcrumbs > span,
+  .editor-breadcrumbs > svg,
+  .editor-presence span,
+  .save-state span {
+    display: none;
+  }
+
+  .editor-presence {
+    display: none;
+  }
+
+  .editor-controls {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .editor-stage-note {
+    display: none;
+  }
+
+  .document-page,
+  .document-page.is-wide {
+    width: 100%;
+    min-height: calc(100dvh - 7.6rem);
+    margin: 0;
+    border: 0;
+    background: var(--paper-raised);
+    box-shadow: none;
+  }
+
+  .document-heading-block {
+    padding: 3rem 1.35rem 1rem;
+  }
+
+  .document-heading-block > input {
+    font-size: 2.45rem;
+  }
+
+  .editor-toolbar {
+    top: 7.55rem;
+    max-width: calc(100% - 1rem);
+    margin-bottom: 1rem;
+  }
+
+  .document-editor .tiptap {
+    min-height: 26rem;
+    padding: 0 1.35rem 4rem;
+    font-size: 1rem;
+  }
+
+  .editor-font-handwriting .tiptap {
+    font-size: 1.08rem;
+  }
+
+  .document-footer {
+    margin-inline: 1.35rem;
   }
 }

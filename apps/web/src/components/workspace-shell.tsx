@@ -8,6 +8,7 @@ import {
   FolderOpen,
   FolderPlus,
   Home,
+  LoaderCircle,
   Menu,
   Moon,
   Plus,
@@ -18,8 +19,22 @@ import {
   Users,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+const DocumentStudio = dynamic(
+  () => import("./document-studio").then((module) => module.DocumentStudio),
+  {
+    ssr: false,
+    loading: () => (
+      <main className="editor-fallback is-loading">
+        <LoaderCircle className="spin" size={26} />
+        <p>正在准备编辑器…</p>
+      </main>
+    ),
+  },
+);
 
 type Workspace = {
   id: string;
@@ -106,6 +121,7 @@ export function WorkspaceShell() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("正在准备你的工作室…");
   const [dark, setDark] = useState(false);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -210,10 +226,14 @@ export function WorkspaceShell() {
           body: JSON.stringify({ workspaceId, parentId: folderId, name }),
         });
       } else if (createMode === "document") {
-        await requestJson("/api/documents", {
-          method: "POST",
-          body: JSON.stringify({ workspaceId, folderId, title: name }),
-        });
+        const createdDocument = await requestJson<{ id: string }>(
+          "/api/documents",
+          {
+            method: "POST",
+            body: JSON.stringify({ workspaceId, folderId, title: name }),
+          },
+        );
+        setActiveDocumentId(createdDocument.id);
       } else {
         const nextSession = await requestJson<Session>("/api/workspaces", {
           method: "POST",
@@ -261,6 +281,20 @@ export function WorkspaceShell() {
     setDark(nextDark);
     document.documentElement.dataset.theme = nextDark ? "dark" : "light";
     localStorage.setItem("collabdocs-theme", nextDark ? "dark" : "light");
+  }
+
+  if (activeDocumentId) {
+    return (
+      <DocumentStudio
+        documentId={activeDocumentId}
+        dark={dark}
+        onToggleTheme={toggleTheme}
+        onClose={() => {
+          setActiveDocumentId(null);
+          void loadTree();
+        }}
+      />
+    );
   }
 
   return (
@@ -537,9 +571,7 @@ export function WorkspaceShell() {
                             document.id,
                           )}
                           onFavorite={() => void toggleFavorite(document.id)}
-                          onOpen={() =>
-                            setNotice("编辑器将在下一阶段接入实时协作")
-                          }
+                          onOpen={() => setActiveDocumentId(document.id)}
                         />
                       ))}
                     </div>
@@ -604,9 +636,7 @@ export function WorkspaceShell() {
                       <div className="content-row" key={document.id}>
                         <button
                           className="content-main"
-                          onClick={() =>
-                            setNotice("编辑器将在下一阶段接入实时协作")
-                          }
+                          onClick={() => setActiveDocumentId(document.id)}
                         >
                           <span className="item-icon document">
                             <FileText size={19} />
