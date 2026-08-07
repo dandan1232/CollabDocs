@@ -29,6 +29,8 @@ import { useEffect, useMemo } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 
+import { createAuthorAttribution } from "./author-attribution";
+
 export type EditorFont = "sans" | "serif" | "handwriting" | "mono";
 
 export type EditorSnapshot = {
@@ -41,6 +43,8 @@ export type RealtimeUser = {
   name: string;
   color: string;
   avatar: string;
+  connectionId?: string;
+  attribution?: boolean;
 };
 
 export type RealtimeStatus =
@@ -145,7 +149,10 @@ export function DocumentEditor({
         const users = new Map<string, RealtimeUser>();
         for (const state of states) {
           const user = state.user as RealtimeUser | undefined;
-          if (user?.id) users.set(user.id, user);
+          if (user?.id) {
+            const connectionId = String(state.clientId);
+            users.set(connectionId, { ...user, connectionId });
+          }
         }
         onUsersChange([...users.values()]);
       },
@@ -200,6 +207,7 @@ export function DocumentEditor({
       editable: permission === "edit",
       extensions: [
         StarterKit.configure({ undoRedo: false }),
+        createAuthorAttribution(viewer),
         Collaboration.configure({ document: yDocument }),
         CollaborationCaret.configure({
           provider,
@@ -230,6 +238,20 @@ export function DocumentEditor({
         attributes: {
           class: "document-prose",
           spellcheck: "true",
+        },
+        handleClick: (_view, _position, event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return false;
+          const authored = target.closest<HTMLElement>("[data-author-id]");
+          if (!authored) return false;
+          onInspectUser({
+            id: authored.dataset.authorId ?? "anonymous",
+            name: authored.dataset.authorName ?? "匿名协作者",
+            color: authored.dataset.authorColor ?? "#b85c3b",
+            avatar: authored.dataset.authorAvatar ?? "/api/avatars/anonymous",
+            attribution: true,
+          });
+          return true;
         },
       },
       onCreate: ({ editor: currentEditor }) => {

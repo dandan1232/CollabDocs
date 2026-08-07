@@ -521,6 +521,7 @@ export function DocumentStudio({
             className={`save-state save-${saveStatus}`}
             onClick={() => void flushSave()}
             title={saveMessage}
+            aria-label={saveMessage}
           >
             <SaveIcon status={saveStatus} />
             <span>{saveMessage}</span>
@@ -538,7 +539,7 @@ export function DocumentStudio({
               .slice(0, 4)
               .map((user) => (
                 <button
-                  key={user.id}
+                  key={user.connectionId ?? user.id}
                   onClick={() => setInspectedUser(user)}
                   title={`查看 ${user.name}`}
                 >
@@ -579,6 +580,36 @@ export function DocumentStudio({
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </header>
+
+      {document.access.permission === "edit" &&
+      (saveStatus === "error" ||
+        saveStatus === "conflict" ||
+        realtimeStatus === "unauthorized") ? (
+        <section className="editor-sync-alert" role="alert">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <div>
+            <strong>文档同步遇到问题</strong>
+            <span>
+              {realtimeStatus === "unauthorized"
+                ? "匿名协作凭证已失效，请重新连接后继续编辑。"
+                : saveMessage}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (realtimeStatus === "unauthorized") {
+                window.location.reload();
+              } else {
+                void flushSave();
+              }
+            }}
+          >
+            <RefreshCw size={15} />
+            重新同步
+          </button>
+        </section>
+      ) : null}
 
       <section className="editor-controls" aria-label="文档设置">
         <label className="font-picker">
@@ -720,7 +751,9 @@ export function DocumentStudio({
             <strong>{inspectedUser.name}</strong>
             <span>
               <i style={{ backgroundColor: inspectedUser.color }} />
-              正在这篇文档中
+              {inspectedUser.attribution
+                ? "这段文字由 TA 写下"
+                : "正在这篇文档中"}
             </span>
           </div>
         </div>

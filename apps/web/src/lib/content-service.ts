@@ -1,4 +1,5 @@
 import { DocumentFont, type PrismaClient } from "@collabdocs/db";
+import * as Y from "yjs";
 
 import {
   GuestServiceError,
@@ -483,11 +484,10 @@ export async function saveDocumentState(
   );
 
   return database.$transaction(async (transaction) => {
-    const updated = await transaction.document.updateMany({
+    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${document.id}))`;
+    await transaction.document.update({
       where: {
         id: document.id,
-        deletedAt: null,
-        contentVersion: mutation.expectedVersion,
       },
       data: {
         title: mutation.title,
@@ -499,23 +499,28 @@ export async function saveDocumentState(
       },
     });
 
-    if (updated.count === 0) {
-      throw new GuestServiceError(
-        "DOCUMENT_VERSION_CONFLICT",
-        "文档已有较新的版本，请刷新后继续编辑。",
-        409,
-      );
-    }
+    const currentState = await transaction.collaborationState.findUnique({
+      where: { documentId: document.id },
+      select: { state: true },
+    });
+    const mergedState = Uint8Array.from(
+      currentState
+        ? Y.mergeUpdates([
+            new Uint8Array(currentState.state),
+            mutation.state,
+          ])
+        : mutation.state,
+    );
 
     await transaction.collaborationState.upsert({
       where: { documentId: document.id },
       create: {
         documentId: document.id,
-        state: mutation.state,
+        state: mergedState,
         schemaVersion: 1,
       },
       update: {
-        state: mutation.state,
+        state: mergedState,
         schemaVersion: 1,
       },
     });

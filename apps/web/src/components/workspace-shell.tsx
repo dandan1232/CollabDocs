@@ -139,6 +139,25 @@ export function WorkspaceShell() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [activeShareToken, setActiveShareToken] = useState<string | null>(null);
 
+  const openDocument = useCallback((documentId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("invite");
+    url.searchParams.delete("share");
+    url.searchParams.set("document", documentId);
+    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setActiveShareToken(null);
+    setActiveDocumentId(documentId);
+  }, []);
+
+  const closeDocument = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("document");
+    url.searchParams.delete("share");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setActiveDocumentId(null);
+    setActiveShareToken(null);
+  }, []);
+
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const savedTheme = localStorage.getItem("collabdocs-theme");
@@ -164,6 +183,7 @@ export function WorkspaceShell() {
         const url = new URL(window.location.href);
         const inviteToken = url.searchParams.get("invite");
         const shareToken = url.searchParams.get("share");
+        const documentId = url.searchParams.get("document");
         if (inviteToken) {
           try {
             const accepted = await requestJson<{
@@ -216,6 +236,11 @@ export function WorkspaceShell() {
               error instanceof Error ? error.message : "分享链接无法使用",
             );
           }
+        } else if (documentId) {
+          setSession(nextSession);
+          setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
+          setActiveDocumentId(documentId);
+          setNotice("已恢复刷新前打开的文档");
         } else {
           setSession(nextSession);
           setWorkspaceId(nextSession.workspaces[0]?.id ?? null);
@@ -232,6 +257,22 @@ export function WorkspaceShell() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    function handlePopState() {
+      const url = new URL(window.location.href);
+      const shareToken = url.searchParams.get("share");
+      if (shareToken) {
+        window.location.reload();
+        return;
+      }
+      setActiveShareToken(null);
+      setActiveDocumentId(url.searchParams.get("document"));
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   const loadTree = useCallback(async () => {
@@ -313,7 +354,7 @@ export function WorkspaceShell() {
             body: JSON.stringify({ workspaceId, folderId, title: name }),
           },
         );
-        setActiveDocumentId(createdDocument.id);
+        openDocument(createdDocument.id);
       } else {
         const nextSession = await requestJson<Session>("/api/workspaces", {
           method: "POST",
@@ -401,17 +442,7 @@ export function WorkspaceShell() {
         dark={dark}
         onToggleTheme={toggleTheme}
         onClose={() => {
-          setActiveDocumentId(null);
-          if (activeShareToken) {
-            const url = new URL(window.location.href);
-            url.searchParams.delete("share");
-            window.history.replaceState(
-              {},
-              "",
-              `${url.pathname}${url.search}${url.hash}`,
-            );
-            setActiveShareToken(null);
-          }
+          closeDocument();
           void loadTree();
         }}
       />
@@ -708,7 +739,7 @@ export function WorkspaceShell() {
                             document.id,
                           )}
                           onFavorite={() => void toggleFavorite(document.id)}
-                          onOpen={() => setActiveDocumentId(document.id)}
+                          onOpen={() => openDocument(document.id)}
                         />
                       ))}
                     </div>
@@ -773,7 +804,7 @@ export function WorkspaceShell() {
                       <div className="content-row" key={document.id}>
                         <button
                           className="content-main"
-                          onClick={() => setActiveDocumentId(document.id)}
+                          onClick={() => openDocument(document.id)}
                         >
                           <span className="item-icon document">
                             <FileText size={19} />

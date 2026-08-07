@@ -1,4 +1,6 @@
 import { Server } from "@hocuspocus/server";
+import { createDatabaseClient, type PrismaClient } from "@collabdocs/db";
+import * as Y from "yjs";
 
 const DEFAULT_PORT = 1234;
 const DEFAULT_INTERNAL_WEB_URL = "http://web:3000";
@@ -18,6 +20,52 @@ type RealtimeContext = {
 };
 
 type Fetcher = typeof fetch;
+
+export type RealtimePersistence = {
+  load(documentId: string): Promise<Uint8Array | null>;
+  store(documentId: string, state: Uint8Array): Promise<void>;
+};
+
+export function createPostgresPersistence(
+  database: PrismaClient = createDatabaseClient(),
+): RealtimePersistence {
+  return {
+    async load(documentId) {
+      const collaboration = await database.collaborationState.findUnique({
+        where: { documentId },
+        select: { state: true },
+      });
+      return collaboration ? new Uint8Array(collaboration.state) : null;
+    },
+    async store(documentId, state) {
+      await database.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${documentId}))`;
+        const current = await transaction.collaborationState.findUnique({
+          where: { documentId },
+          select: { state: true },
+        });
+        const mergedState = Uint8Array.from(
+          current
+            ? Y.mergeUpdates([new Uint8Array(current.state), state])
+            : state,
+        );
+
+        await transaction.collaborationState.upsert({
+          where: { documentId },
+          create: {
+            documentId,
+            state: mergedState,
+            schemaVersion: 1,
+          },
+          update: {
+            state: mergedState,
+            schemaVersion: 1,
+          },
+        });
+      });
+    },
+  };
+}
 
 export function createHealthPayload() {
   return {
@@ -56,6 +104,7 @@ export async function authorizeConnection(
 export function createRealtimeServer(
   internalWebUrl = process.env.INTERNAL_WEB_URL ?? DEFAULT_INTERNAL_WEB_URL,
   fetcher: Fetcher = fetch,
+  persistence: RealtimePersistence = createPostgresPersistence(),
 ) {
   return new Server<RealtimeContext>({
     name: "collabdocs-realtime",
@@ -74,6 +123,12 @@ export function createRealtimeServer(
       );
       connectionConfig.readOnly = context.user.readOnly;
       return context;
+    },
+    async onLoadDocument({ documentName }) {
+      return (await persistence.load(documentName)) ?? new Uint8Array();
+    },
+    async onStoreDocument({ documentName, document }) {
+      await persistence.store(documentName, Y.encodeStateAsUpdate(document));
     },
     async onRequest({ request, response }) {
       if (request.url === "/health") {
