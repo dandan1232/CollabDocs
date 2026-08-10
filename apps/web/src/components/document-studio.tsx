@@ -32,6 +32,12 @@ import {
 } from "react";
 
 import {
+  isRetriableRequestError,
+  RequestError,
+  requestJson,
+} from "@/lib/client-request";
+
+import {
   DocumentEditor,
   type EditorFont,
   type EditorSnapshot,
@@ -84,36 +90,7 @@ type SaveDraft = EditorSnapshot & {
 type SaveStatus =
   "loading" | "pending" | "saving" | "saved" | "offline" | "error" | "conflict";
 
-class RequestError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
-  }
-}
-
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
-  const data = (await response.json()) as T & {
-    error?: { message?: string };
-  };
-
-  if (!response.ok) {
-    throw new RequestError(
-      data.error?.message ?? "文档请求失败，请稍后重试。",
-      response.status,
-    );
-  }
-
-  return data;
-}
+const SAVE_RETRY_DELAYS_MS = [3_000, 10_000, 30_000, 60_000] as const;
 
 const fontOptions: Array<{
   value: EditorFont;
@@ -171,6 +148,8 @@ export function DocumentStudio({
   const savingRef = useRef(false);
   const retryAfterSaveRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveRetryAttemptRef = useRef(0);
   const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
   const viewerId = document?.viewer.id;
   const viewerName = document?.viewer.nickname;
@@ -224,8 +203,16 @@ export function DocumentStudio({
           headers: shareToken
             ? { "x-collabdocs-share": shareToken }
             : undefined,
+          timeoutMs: 8_000,
+          retries: 2,
+          retryDelayMs: 400,
         },
       );
+      if (saveRetryTimerRef.current) {
+        clearTimeout(saveRetryTimerRef.current);
+        saveRetryTimerRef.current = null;
+      }
+      saveRetryAttemptRef.current = 0;
       versionRef.current = saved.contentVersion;
       setContentVersion(saved.contentVersion);
       savedRevisionRef.current = savingRevision;
@@ -252,9 +239,28 @@ export function DocumentStudio({
       }
       const conflict = error instanceof RequestError && error.status === 409;
       setSaveStatus(conflict ? "conflict" : "error");
-      setSaveMessage(
-        error instanceof Error ? error.message : "保存失败，请稍后重试。",
-      );
+      const message =
+        error instanceof Error ? error.message : "保存失败，请稍后重试。";
+      if (!conflict && isRetriableRequestError(error)) {
+        const retryIndex = Math.min(
+          saveRetryAttemptRef.current,
+          SAVE_RETRY_DELAYS_MS.length - 1,
+        );
+        const retryDelay = SAVE_RETRY_DELAYS_MS[retryIndex];
+        saveRetryAttemptRef.current += 1;
+        if (saveRetryTimerRef.current) {
+          clearTimeout(saveRetryTimerRef.current);
+        }
+        saveRetryTimerRef.current = setTimeout(
+          () => void flushSaveRef.current(),
+          retryDelay,
+        );
+        setSaveMessage(
+          `${message} 将在 ${Math.ceil(retryDelay / 1000)} 秒后自动重试。`,
+        );
+      } else {
+        setSaveMessage(message);
+      }
     } finally {
       savingRef.current = false;
       if (retryAfterSaveRef.current) {
@@ -274,6 +280,11 @@ export function DocumentStudio({
   useEffect(() => {
     const handleOnline = () => {
       setOnline(true);
+      saveRetryAttemptRef.current = 0;
+      if (saveRetryTimerRef.current) {
+        clearTimeout(saveRetryTimerRef.current);
+        saveRetryTimerRef.current = null;
+      }
       setSaveStatus("pending");
       setSaveMessage("网络已恢复，正在同步离线更改…");
       void flushSaveRef.current();
@@ -297,6 +308,11 @@ export function DocumentStudio({
       if (!draftRef.current) return;
       draftRef.current = { ...draftRef.current, ...patch };
       revisionRef.current += 1;
+      saveRetryAttemptRef.current = 0;
+      if (saveRetryTimerRef.current) {
+        clearTimeout(saveRetryTimerRef.current);
+        saveRetryTimerRef.current = null;
+      }
       if (!navigator.onLine) {
         setSaveStatus("offline");
         setSaveMessage("已安全保存在此设备，联网后自动同步");
@@ -318,6 +334,7 @@ export function DocumentStudio({
       return requestJson<EditorDocument>(`/api/documents/${documentId}`, {
         signal,
         headers: shareToken ? { "x-collabdocs-share": shareToken } : undefined,
+        retries: 1,
       })
         .then((nextDocument) => {
           setDocument(nextDocument);
@@ -364,6 +381,7 @@ export function DocumentStudio({
       cancelAnimationFrame(frame);
       controller.abort();
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (saveRetryTimerRef.current) clearTimeout(saveRetryTimerRef.current);
     };
   }, [loadDocument]);
 
@@ -419,6 +437,7 @@ export function DocumentStudio({
 
   async function closeEditor() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (saveRetryTimerRef.current) clearTimeout(saveRetryTimerRef.current);
     await flushSave();
     onClose();
   }

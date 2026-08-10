@@ -1,5 +1,9 @@
 import { Server } from "@hocuspocus/server";
-import { createDatabaseClient, type PrismaClient } from "@collabdocs/db";
+import {
+  checkDatabaseHealth,
+  createDatabaseClient,
+  type PrismaClient,
+} from "@collabdocs/db";
 import * as Y from "yjs";
 
 const DEFAULT_PORT = 1234;
@@ -22,6 +26,7 @@ type RealtimeContext = {
 type Fetcher = typeof fetch;
 
 export type RealtimePersistence = {
+  check(): Promise<void>;
   load(documentId: string): Promise<Uint8Array | null>;
   store(documentId: string, state: Uint8Array): Promise<void>;
 };
@@ -30,6 +35,9 @@ export function createPostgresPersistence(
   database: PrismaClient = createDatabaseClient(),
 ): RealtimePersistence {
   return {
+    async check() {
+      await checkDatabaseHealth(database);
+    },
     async load(documentId) {
       const collaboration = await database.collaborationState.findUnique({
         where: { documentId },
@@ -78,6 +86,33 @@ export function createHealthPayload() {
   return {
     service: "collabdocs-realtime",
     status: "ok",
+  } as const;
+}
+
+export async function checkRealtimeReadiness(
+  persistence: RealtimePersistence,
+  internalWebUrl: string,
+  fetcher: Fetcher = fetch,
+) {
+  await Promise.all([
+    persistence.check(),
+    fetcher(new URL("/api/health/ready", internalWebUrl), {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error("Web readiness check failed.");
+      }
+    }),
+  ]);
+
+  return {
+    service: "collabdocs-realtime",
+    status: "ok",
+    checks: {
+      database: "ok",
+      web: "ok",
+    },
   } as const;
 }
 
@@ -138,9 +173,37 @@ export function createRealtimeServer(
       await persistence.store(documentName, Y.encodeStateAsUpdate(document));
     },
     async onRequest({ request, response }) {
-      if (request.url === "/health") {
-        response.writeHead(200, { "content-type": "application/json" });
+      const path = new URL(request.url ?? "/", "http://localhost").pathname;
+      const healthHeaders = {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+      };
+
+      if (path === "/health/live") {
+        response.writeHead(200, healthHeaders);
         response.end(JSON.stringify(createHealthPayload()));
+        throw null;
+      }
+
+      if (path === "/health" || path === "/health/ready") {
+        try {
+          const payload = await checkRealtimeReadiness(
+            persistence,
+            internalWebUrl,
+            fetcher,
+          );
+          response.writeHead(200, healthHeaders);
+          response.end(JSON.stringify(payload));
+        } catch (error) {
+          console.error("Realtime readiness check failed", error);
+          response.writeHead(503, healthHeaders);
+          response.end(
+            JSON.stringify({
+              service: "collabdocs-realtime",
+              status: "unavailable",
+            }),
+          );
+        }
         throw null;
       }
     },

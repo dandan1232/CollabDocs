@@ -29,6 +29,8 @@ import { useEffect, useMemo } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 
+import { requestJson } from "@/lib/client-request";
+
 import { createAuthorAttribution } from "./author-attribution";
 
 export type EditorFont = "sans" | "serif" | "handwriting" | "mono";
@@ -94,21 +96,15 @@ async function requestRealtimeToken(
   documentId: string,
   shareToken?: string,
 ): Promise<string> {
-  const response = await fetch(
+  const data = await requestJson<{ token: string }>(
     `/api/realtime/token?documentId=${encodeURIComponent(documentId)}`,
     {
       cache: "no-store",
       headers: shareToken ? { "x-collabdocs-share": shareToken } : undefined,
+      timeoutMs: 8_000,
+      retries: 1,
     },
   );
-  const data = (await response.json()) as {
-    token?: string;
-    error?: { message?: string };
-  };
-
-  if (!response.ok || !data.token) {
-    throw new Error(data.error?.message ?? "无法建立实时协作连接。");
-  }
 
   return data.token;
 }

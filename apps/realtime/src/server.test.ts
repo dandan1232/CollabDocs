@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   authorizeConnection,
+  checkRealtimeReadiness,
   createHealthPayload,
   loadDocumentState,
 } from "./server.js";
@@ -60,6 +61,7 @@ describe("realtime authorization", () => {
 describe("realtime persistence", () => {
   it("leaves a new room empty when no persisted Yjs update exists", async () => {
     const persistence = {
+      check: async () => undefined,
       load: async () => null,
       store: async () => undefined,
     };
@@ -67,5 +69,51 @@ describe("realtime persistence", () => {
     await expect(loadDocumentState(persistence, "new-document")).resolves.toBe(
       undefined,
     );
+  });
+});
+
+describe("realtime readiness", () => {
+  it("checks PostgreSQL and the internal web service", async () => {
+    const persistence = {
+      check: vi.fn().mockResolvedValue(undefined),
+      load: async () => null,
+      store: async () => undefined,
+    };
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+
+    await expect(
+      checkRealtimeReadiness(
+        persistence,
+        "http://web:3000",
+        fetcher as typeof fetch,
+      ),
+    ).resolves.toEqual({
+      service: "collabdocs-realtime",
+      status: "ok",
+      checks: { database: "ok", web: "ok" },
+    });
+    expect(persistence.check).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledWith(
+      new URL("http://web:3000/api/health/ready"),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("rejects when the web service is not ready", async () => {
+    const persistence = {
+      check: async () => undefined,
+      load: async () => null,
+      store: async () => undefined,
+    };
+
+    await expect(
+      checkRealtimeReadiness(
+        persistence,
+        "http://web:3000",
+        (async () => new Response(null, { status: 503 })) as typeof fetch,
+      ),
+    ).rejects.toThrow("Web readiness check failed");
   });
 });

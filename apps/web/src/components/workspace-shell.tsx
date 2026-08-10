@@ -26,6 +26,8 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { requestJson } from "@/lib/client-request";
+
 const DocumentStudio = dynamic(
   () => import("./document-studio").then((module) => module.DocumentStudio),
   {
@@ -90,25 +92,6 @@ type InviteDetails = {
   maxUses: number;
 };
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
-  const data = (await response.json()) as T & {
-    error?: { message?: string };
-  };
-
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? "请求失败，请稍后重试。 ");
-  }
-
-  return data;
-}
-
 function relativeDate(value: string): string {
   const elapsed = Date.now() - new Date(value).getTime();
   const minutes = Math.max(1, Math.floor(elapsed / 60_000));
@@ -153,7 +136,11 @@ export function WorkspaceShell() {
     const url = new URL(window.location.href);
     url.searchParams.delete("document");
     url.searchParams.delete("share");
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
     setActiveDocumentId(null);
     setActiveShareToken(null);
   }, []);

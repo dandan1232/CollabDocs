@@ -71,7 +71,6 @@ services:
       NODE_ENV: production
       APP_URL: ${APP_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-collabdocs}:${POSTGRES_PASSWORD:-collabdocs}@postgres:5432/${POSTGRES_DB:-collabdocs}?schema=public
-      NEXT_PUBLIC_REALTIME_URL: ws://localhost:${REALTIME_PORT:-1234}
       S3_ENDPOINT: http://minio:9000
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_BUCKET: ${S3_BUCKET:-collabdocs}
@@ -88,10 +87,21 @@ services:
       minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3000/"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--spider",
+          "http://127.0.0.1:3000/api/health/ready",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
 
   realtime:
     build:
@@ -109,12 +119,24 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      web:
+        condition: service_healthy
     healthcheck:
       test:
-        ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:1234/health"]
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--spider",
+          "http://127.0.0.1:1234/health/ready",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
 
 volumes:
   postgres-data:
