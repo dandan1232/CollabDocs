@@ -146,7 +146,12 @@ export function DocumentEditor({
       Y.applyUpdate(nextDocument, decodeBase64(initialState));
     }
     return nextDocument;
-  }, [documentId, initialState]);
+    // The API save response contains a newer encoded state. Recreating the
+    // Y.Doc for that response would tear down the live provider while local
+    // updates are still being acknowledged, so this document only changes
+    // when the user opens another document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId]);
 
   const provider = useMemo(() => {
     const nextProvider = new HocuspocusProvider({
@@ -155,8 +160,12 @@ export function DocumentEditor({
       document: yDocument,
       token: () => requestRealtimeToken(documentId, shareToken),
       flushDelay: 40,
-      onStatus: ({ status }) => onStatusChange(status),
-      onAuthenticated: () => onStatusChange("connected"),
+      onStatus: ({ status }) => {
+        if (status !== "connected") onStatusChange(status);
+      },
+      onSynced: ({ state }) => {
+        if (state) onStatusChange("connected");
+      },
       onAuthenticationFailed: () => onStatusChange("unauthorized"),
       onAwarenessChange: ({ states }) => {
         const users = new Map<string, RealtimeUser>();
