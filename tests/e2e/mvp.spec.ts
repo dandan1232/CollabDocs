@@ -92,6 +92,12 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   const ownerEditor = page.locator(".document-editor .tiptap");
   const memberEditor = memberPage.locator(".document-editor .tiptap");
   await expect(memberEditor).toBeVisible();
+  await expect(page.getByText("实时协作已连接", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    memberPage.getByText("实时协作已连接", { exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
   await ownerEditor.click();
   await ownerEditor.pressSequentially("实时协作正文-SEARCH-UNIQUE", {
     delay: 25,
