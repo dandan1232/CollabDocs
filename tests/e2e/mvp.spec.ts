@@ -139,12 +139,17 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "移到回收站" }).click();
   await expect(page.getByRole("button", { name: "回收站" })).toBeVisible();
+  const recoveryResponsePromise = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/api/recovery",
+  );
   await page.getByRole("button", { name: "回收站" }).click();
+  expect((await recoveryResponsePromise).ok()).toBeTruthy();
   const trashedRow = page
     .locator(".content-row")
     .filter({ hasText: "多人验收文档" });
   await expect(trashedRow).toBeVisible();
-  await trashedRow.getByRole("button", { name: "恢复" }).click();
+  await trashedRow.locator("button.text-button").click();
+  await expect(trashedRow).toBeHidden();
   await page.getByRole("button", { name: "工作台" }).click();
 
   const search = page.getByRole("textbox", { name: "搜索" });
@@ -176,7 +181,7 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
     .first()
     .click();
   await expect(mobilePage.locator(".document-editor .tiptap")).toBeVisible();
-  await expect(mobilePage.getByText(/人在线/).first()).toBeVisible();
+  await expect(mobilePage.getByLabel("当前在线成员")).toBeVisible();
 
   await Promise.all([
     memberContext.close(),
