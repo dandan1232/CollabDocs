@@ -22,12 +22,38 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
     "欢迎来到 CollabDocs",
   );
 
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) =>
+    browserErrors.push(`pageerror: ${error.stack}`),
+  );
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      browserErrors.push(`console: ${message.text()}`);
+    }
+  });
+  const sessionResponsePromise = page
+    .waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/session",
+      { timeout: 15_000 },
+    )
+    .catch((error: unknown) => {
+      browserErrors.push(
+        `session-response: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    });
   await page.goto("/");
-  await page.waitForTimeout(2_000);
+  const browserSessionResponse = await sessionResponsePromise;
+  if (browserSessionResponse && !browserSessionResponse.ok()) {
+    browserErrors.push(
+      `session-http-${browserSessionResponse.status()}: ${await browserSessionResponse.text()}`,
+    );
+  }
+  await page.waitForTimeout(1_000);
   const initialBodyText = await page.locator("body").innerText();
   expect(
     initialBodyText,
-    `首页未显示欢迎文档。URL=${page.url()}，页面内容=${initialBodyText}`,
+    `首页未显示欢迎文档。URL=${page.url()}，页面内容=${initialBodyText}，浏览器错误=${browserErrors.join(" | ")}`,
   ).toContain("欢迎来到 CollabDocs");
 
   await page.getByRole("button", { name: "新建团队空间" }).click();
