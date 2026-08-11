@@ -3,6 +3,8 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
+import TiptapImage from "@tiptap/extension-image";
+import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import {
   EditorContent,
@@ -20,12 +22,13 @@ import {
   List as ListIcon,
   ListOrdered,
   Minus,
+  Paperclip,
   Quote,
   Redo2,
   Strikethrough,
   Undo2,
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 
@@ -61,6 +64,11 @@ type DocumentEditorProps = {
   viewer: RealtimeUser;
   permission: "view" | "edit";
   shareToken?: string;
+  onUploadAsset?: (file: File) => Promise<{
+    url: string;
+    originalName: string;
+    mimeType: string;
+  }>;
   onChange: (snapshot: EditorSnapshot) => void;
   onBlur: () => void;
   onStatusChange: (status: RealtimeStatus) => void;
@@ -116,6 +124,7 @@ export function DocumentEditor({
   viewer,
   permission,
   shareToken,
+  onUploadAsset,
   onChange,
   onBlur,
   onStatusChange,
@@ -203,6 +212,11 @@ export function DocumentEditor({
       editable: permission === "edit",
       extensions: [
         StarterKit.configure({ undoRedo: false }),
+        Link.configure({
+          openOnClick: permission === "view",
+          autolink: true,
+        }),
+        TiptapImage.configure({ allowBase64: false }),
         createAuthorAttribution(viewer),
         Collaboration.configure({ document: yDocument }),
         CollaborationCaret.configure({
@@ -285,7 +299,7 @@ export function DocumentEditor({
           只读分享 · 内容更新会实时显示
         </div>
       ) : editor ? (
-        <EditorToolbar editor={editor} />
+        <EditorToolbar editor={editor} onUploadAsset={onUploadAsset} />
       ) : (
         <div className="editor-toolbar is-loading" aria-hidden="true" />
       )}
@@ -294,7 +308,15 @@ export function DocumentEditor({
   );
 }
 
-function EditorToolbar({ editor }: { editor: Editor }) {
+function EditorToolbar({
+  editor,
+  onUploadAsset,
+}: {
+  editor: Editor;
+  onUploadAsset?: DocumentEditorProps["onUploadAsset"];
+}) {
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
   const state = useEditorState({
     editor,
     selector: ({ editor: currentEditor }) => ({
@@ -314,6 +336,50 @@ function EditorToolbar({ editor }: { editor: Editor }) {
 
   if (!editor || !state) {
     return <div className="editor-toolbar is-loading" aria-hidden="true" />;
+  }
+
+  async function uploadSelectedFile(file: File | undefined) {
+    if (!file || !onUploadAsset) return;
+    setUploading(true);
+    try {
+      const asset = await onUploadAsset(file);
+      if (asset.mimeType.startsWith("image/")) {
+        editor
+          .chain()
+          .focus()
+          .setImage({ src: asset.url, alt: asset.originalName })
+          .run();
+      } else {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: asset.originalName,
+                marks: [
+                  {
+                    type: "link",
+                    attrs: {
+                      href: asset.url,
+                      target: "_blank",
+                      rel: "noopener noreferrer nofollow",
+                    },
+                  },
+                ],
+              },
+            ],
+          })
+          .run();
+      }
+    } catch {
+      // The parent surfaces the upload error in the document save message.
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
   }
 
   return (
@@ -394,6 +460,26 @@ function EditorToolbar({ editor }: { editor: Editor }) {
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
         icon={<Minus size={18} />}
       />
+      {onUploadAsset ? (
+        <>
+          <span className="toolbar-divider" />
+          <ToolbarButton
+            label={uploading ? "正在上传附件" : "插入图片或附件"}
+            disabled={uploading}
+            onClick={() => uploadInputRef.current?.click()}
+            icon={<Paperclip className={uploading ? "spin" : ""} size={18} />}
+          />
+          <input
+            ref={uploadInputRef}
+            className="sr-only"
+            type="file"
+            accept="image/avif,image/gif,image/jpeg,image/png,image/webp,application/pdf,application/zip,text/plain,text/markdown,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+            onChange={(event) =>
+              void uploadSelectedFile(event.currentTarget.files?.[0])
+            }
+          />
+        </>
+      ) : null}
     </div>
   );
 }

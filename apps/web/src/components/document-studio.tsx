@@ -76,6 +76,12 @@ type ShareDetails = {
   expiresAt: string;
 };
 
+type UploadedAsset = {
+  url: string;
+  originalName: string;
+  mimeType: string;
+};
+
 type SavedDocument = Pick<
   EditorDocument,
   "id" | "title" | "fontFamily" | "isWide" | "contentVersion" | "updatedAt"
@@ -91,6 +97,26 @@ type SaveStatus =
   "loading" | "pending" | "saving" | "saved" | "offline" | "error" | "conflict";
 
 const SAVE_RETRY_DELAYS_MS = [3_000, 10_000, 30_000, 60_000] as const;
+
+const fallbackMimeTypes: Record<string, string> = {
+  ".md": "text/markdown",
+  ".txt": "text/plain",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".zip": "application/zip",
+};
+
+function fileMimeType(file: File): string {
+  if (file.type) return file.type;
+  const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  return fallbackMimeTypes[extension] ?? "application/octet-stream";
+}
 
 const fontOptions: Array<{
   value: EditorFont;
@@ -476,6 +502,50 @@ export function DocumentStudio({
     }
   }
 
+  const uploadAsset = useCallback(
+    async (file: File): Promise<UploadedAsset> => {
+      if (!document || shareToken) {
+        throw new Error("当前访问方式不能上传附件。");
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error("单个文件不能超过 20 MB。");
+      }
+
+      setSaveMessage(`正在上传 ${file.name}…`);
+      try {
+        const mimeType = fileMimeType(file);
+        const authorization = await requestJson<{
+          uploadUrl: string;
+          mimeType: string;
+        }>("/api/assets", {
+          method: "POST",
+          body: JSON.stringify({
+            workspaceId: document.workspace.id,
+            documentId: document.id,
+            originalName: file.name,
+            mimeType,
+            size: file.size,
+          }),
+        });
+        const uploaded = await requestJson<UploadedAsset>(
+          authorization.uploadUrl,
+          {
+            method: "PUT",
+            body: file,
+            headers: { "Content-Type": authorization.mimeType },
+            timeoutMs: 120_000,
+          },
+        );
+        setSaveMessage(`${file.name} 已上传`);
+        return uploaded;
+      } catch (error) {
+        setSaveMessage(error instanceof Error ? error.message : "附件上传失败");
+        throw error;
+      }
+    },
+    [document, shareToken],
+  );
+
   if (loadError) {
     return (
       <main className="editor-fallback">
@@ -729,6 +799,7 @@ export function DocumentStudio({
             viewer={realtimeViewer}
             permission={document.access.permission}
             shareToken={shareToken}
+            onUploadAsset={!shareToken ? uploadAsset : undefined}
             onChange={handleEditorChange}
             onBlur={() => void flushSave()}
             onStatusChange={setRealtimeStatus}

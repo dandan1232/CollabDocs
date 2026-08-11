@@ -46,7 +46,7 @@ server {
     ssl_session_cache shared:CollabDocsTLS:10m;
     ssl_session_timeout 1d;
 
-    client_max_body_size 8m;
+    client_max_body_size 21m;
     limit_req_status 429;
     limit_conn_status 429;
     add_header Strict-Transport-Security "max-age=31536000" always;
