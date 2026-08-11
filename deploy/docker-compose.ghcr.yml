@@ -1,0 +1,12 @@
+services:
+  migrate:
+    build: null
+    image: ghcr.io/dandan1232/collabdocs-migrate:${COLLABDOCS_IMAGE_TAG:?COLLABDOCS_IMAGE_TAG is required}
+
+  web:
+    build: null
+    image: ghcr.io/dandan1232/collabdocs-web:${COLLABDOCS_IMAGE_TAG:?COLLABDOCS_IMAGE_TAG is required}
+
+  realtime:
+    build: null
+    image: ghcr.io/dandan1232/collabdocs-realtime:${COLLABDOCS_IMAGE_TAG:?COLLABDOCS_IMAGE_TAG is required}

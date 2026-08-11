@@ -505,10 +505,7 @@ export async function saveDocumentState(
     });
     const mergedState = Uint8Array.from(
       currentState
-        ? Y.mergeUpdates([
-            new Uint8Array(currentState.state),
-            mutation.state,
-          ])
+        ? Y.mergeUpdates([new Uint8Array(currentState.state), mutation.state])
         : mutation.state,
     );
 

@@ -1332,8 +1332,13 @@ select:focus-visible {
   align-items: center;
   gap: 0.75rem;
   padding: 0.7rem clamp(0.9rem, 3vw, 1.5rem);
-  border-bottom: 1px solid color-mix(in srgb, var(--terracotta) 34%, var(--line));
-  background: color-mix(in srgb, var(--terracotta-wash) 94%, var(--paper-raised));
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--terracotta) 34%, var(--line));
+  background: color-mix(
+    in srgb,
+    var(--terracotta-wash) 94%,
+    var(--paper-raised)
+  );
   color: var(--terracotta-deep);
 }
 

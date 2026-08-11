@@ -1,0 +1,30 @@
+name: Package retention
+
+on:
+  schedule:
+    - cron: "23 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  retain-recent-images:
+    name: Retain recent ${{ matrix.package }} images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - collabdocs-web
+          - collabdocs-realtime
+          - collabdocs-migrate
+    steps:
+      - name: Keep the 10 most recent image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: 10
+          token: ${{ secrets.GITHUB_TOKEN }}
