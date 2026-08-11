@@ -4,6 +4,24 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   browser,
   page,
 }) => {
+  const bootstrapResponse = await page.request.post("/api/session");
+  const session = (await bootstrapResponse.json()) as {
+    workspaces: Array<{ id: string }>;
+  };
+  expect(bootstrapResponse.ok(), JSON.stringify(session)).toBeTruthy();
+  const personalWorkspaceId = session.workspaces[0]?.id;
+  expect(personalWorkspaceId).toBeTruthy();
+  const treeResponse = await page.request.get(
+    `/api/workspaces/${personalWorkspaceId}/tree`,
+  );
+  const initialTree = (await treeResponse.json()) as {
+    documents: Array<{ title: string }>;
+  };
+  expect(treeResponse.ok(), JSON.stringify(initialTree)).toBeTruthy();
+  expect(initialTree.documents.map((document) => document.title)).toContain(
+    "欢迎来到 CollabDocs",
+  );
+
   await page.goto("/");
   await expect(
     page.getByText("欢迎来到 CollabDocs", { exact: true }).first(),
