@@ -319,6 +319,7 @@ export function DocumentEditor({
       cleanupTimers.delete(provider);
     }
 
+    provider.attach();
     void websocketProvider.connect();
 
     return () => {
