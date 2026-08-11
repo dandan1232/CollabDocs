@@ -144,16 +144,14 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "移到回收站" }).click();
   await expect(page.getByRole("button", { name: "回收站" })).toBeVisible();
-  const recoveryResponsePromise = page.waitForResponse(
-    (response) => {
-      const url = new URL(response.url());
-      return (
-        url.pathname.startsWith("/api/workspaces/") &&
-        url.pathname.endsWith("/tree") &&
-        url.searchParams.get("view") === "trash"
-      );
-    },
-  );
+  const recoveryResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname.startsWith("/api/workspaces/") &&
+      url.pathname.endsWith("/tree") &&
+      url.searchParams.get("view") === "trash"
+    );
+  });
   await page.getByRole("button", { name: "回收站" }).click();
   expect((await recoveryResponsePromise).ok()).toBeTruthy();
   const trashedRow = page
