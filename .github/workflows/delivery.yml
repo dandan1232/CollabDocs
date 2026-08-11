@@ -99,7 +99,6 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: ${{ secrets.COLLABDOCS_BASE_URL }}
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
