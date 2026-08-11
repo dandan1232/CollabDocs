@@ -73,6 +73,7 @@ type DocumentItem = {
   updatedAt: string;
   deletedAt: string | null;
   purgeAfter: string | null;
+  searchSnippet?: string;
   updatedBy: { nickname: string; avatarUrl: string; presenceColor: string };
 };
 
@@ -80,6 +81,10 @@ type Tree = {
   folders: FolderItem[];
   documents: DocumentItem[];
   favorites: { folderIds: string[]; documentIds: string[] };
+};
+
+type SearchResults = Pick<Tree, "folders" | "documents"> & {
+  query: string;
 };
 
 type View = "home" | "favorites" | "trash";
@@ -108,6 +113,12 @@ export function WorkspaceShell() {
   const [folderId, setFolderId] = useState<string | null>(null);
   const [view, setView] = useState<View>("home");
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(
+    null,
+  );
+  const [searchQueryInFlight, setSearchQueryInFlight] = useState<string | null>(
+    null,
+  );
   const [createMode, setCreateMode] = useState<CreateMode>(null);
   const [draftName, setDraftName] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -280,20 +291,44 @@ export function WorkspaceShell() {
     return () => cancelAnimationFrame(frame);
   }, [loadTree]);
 
+  useEffect(() => {
+    const normalizedQuery = query.trim();
+    if (!workspaceId || !normalizedQuery) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSearchQueryInFlight(normalizedQuery);
+      void requestJson<SearchResults>(
+        `/api/workspaces/${workspaceId}/search?query=${encodeURIComponent(normalizedQuery)}`,
+        { signal: controller.signal },
+      )
+        .then((results) => setSearchResults(results))
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) {
+            setNotice(error instanceof Error ? error.message : "搜索失败");
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchQueryInFlight(null);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, workspaceId]);
+
   const workspace = session?.workspaces.find((item) => item.id === workspaceId);
   const activeFolder = tree?.folders.find((item) => item.id === folderId);
   const contents = useMemo(() => {
     if (!tree) return { folders: [], documents: [] };
     if (query.trim()) {
-      const keyword = query.trim().toLocaleLowerCase();
-      return {
-        folders: tree.folders.filter((item) =>
-          item.name.toLocaleLowerCase().includes(keyword),
-        ),
-        documents: tree.documents.filter((item) =>
-          item.title.toLocaleLowerCase().includes(keyword),
-        ),
-      };
+      return searchResults?.query === query.trim()
+        ? searchResults
+        : { folders: [], documents: [] };
     }
     if (view === "favorites") {
       return {
@@ -309,7 +344,7 @@ export function WorkspaceShell() {
       folders: tree.folders.filter((item) => item.parentId === folderId),
       documents: tree.documents.filter((item) => item.folderId === folderId),
     };
-  }, [folderId, query, tree, view]);
+  }, [folderId, query, searchResults, tree, view]);
 
   const recentDocuments = useMemo(
     () =>
@@ -744,7 +779,9 @@ export function WorkspaceShell() {
                           : "文件与文档"}
                   </h2>
                   <span>
-                    {contents.folders.length + contents.documents.length} 项
+                    {searchQueryInFlight === query.trim()
+                      ? "搜索中…"
+                      : `${contents.folders.length + contents.documents.length} 项`}
                   </span>
                 </div>
                 {contents.folders.length + contents.documents.length === 0 ? (
@@ -801,7 +838,9 @@ export function WorkspaceShell() {
                             <small>
                               {view === "trash"
                                 ? `将在 ${new Date(document.purgeAfter ?? "").toLocaleDateString("zh-CN")} 清理`
-                                : `${document.updatedBy.nickname} · ${relativeDate(document.updatedAt)}`}
+                                : query && document.searchSnippet
+                                  ? document.searchSnippet
+                                  : `${document.updatedBy.nickname} · ${relativeDate(document.updatedAt)}`}
                             </small>
                           </span>
                         </button>
