@@ -161,7 +161,7 @@ export function DocumentStudio({
   const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUser[]>([]);
   const [inspectedUser, setInspectedUser] = useState<RealtimeUser | null>(null);
   const [sharePermission, setSharePermission] = useState<"view" | "edit">(
-    "edit",
+    "view",
   );
   const [shareDetails, setShareDetails] = useState<ShareDetails | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
