@@ -99,14 +99,13 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
     memberPage.getByText("实时协作已连接", { exact: true }),
   ).toBeVisible({ timeout: 30_000 });
   await ownerEditor.click();
-  await ownerEditor.pressSequentially("实时协作正文-SEARCH-UNIQUE", {
-    delay: 25,
-  });
+  await page.keyboard.insertText("实时协作正文-SEARCH-UNIQUE");
+  await expect(ownerEditor).toContainText("实时协作正文-SEARCH-UNIQUE");
   await expect(memberEditor).toContainText("实时协作正文-SEARCH-UNIQUE");
 
   await page.context().setOffline(true);
   await ownerEditor.press("End");
-  await ownerEditor.pressSequentially(" 离线补充", { delay: 20 });
+  await page.keyboard.insertText(" 离线补充");
   await page.context().setOffline(false);
   await expect(memberEditor).toContainText("离线补充", { timeout: 30_000 });
 
