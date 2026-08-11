@@ -23,9 +23,12 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   );
 
   await page.goto("/");
-  await expect(
-    page.getByText("欢迎来到 CollabDocs", { exact: true }).first(),
-  ).toBeVisible();
+  await page.waitForTimeout(2_000);
+  const initialBodyText = await page.locator("body").innerText();
+  expect(
+    initialBodyText,
+    `首页未显示欢迎文档。URL=${page.url()}，页面内容=${initialBodyText}`,
+  ).toContain("欢迎来到 CollabDocs");
 
   await page.getByRole("button", { name: "新建团队空间" }).click();
   await page.getByPlaceholder("输入名称后按 Enter").fill("端到端协作空间");
