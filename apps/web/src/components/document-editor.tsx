@@ -1,6 +1,9 @@
 "use client";
 
-import { HocuspocusProvider } from "@hocuspocus/provider";
+import {
+  HocuspocusProvider,
+  HocuspocusProviderWebsocket,
+} from "@hocuspocus/provider";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import TiptapImage from "@tiptap/extension-image";
@@ -153,9 +156,13 @@ export function DocumentEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
 
-  const provider = useMemo(() => {
-    const nextProvider = new HocuspocusProvider({
+  const { provider, websocketProvider } = useMemo(() => {
+    const nextWebsocketProvider = new HocuspocusProviderWebsocket({
       url: getRealtimeUrl(),
+      autoConnect: false,
+    });
+    const nextProvider = new HocuspocusProvider({
+      websocketProvider: nextWebsocketProvider,
       name: documentId,
       document: yDocument,
       token: () => requestRealtimeToken(documentId, shareToken),
@@ -180,7 +187,10 @@ export function DocumentEditor({
       },
     });
     nextProvider.setAwarenessField("user", viewer);
-    return nextProvider;
+    return {
+      provider: nextProvider,
+      websocketProvider: nextWebsocketProvider,
+    };
   }, [
     documentId,
     onStatusChange,
@@ -200,6 +210,7 @@ export function DocumentEditor({
       return null;
     }
   }, [documentId, yDocument]);
+  const providerCleanupTimers = useRef(new Map<HocuspocusProvider, number>());
 
   useEffect(() => {
     if (!localPersistence) {
@@ -300,14 +311,28 @@ export function DocumentEditor({
     [permission, provider, yDocument],
   );
 
-  useEffect(
-    () => () => {
-      localPersistence?.destroy();
-      provider.destroy();
-      yDocument.destroy();
-    },
-    [localPersistence, provider, yDocument],
-  );
+  useEffect(() => {
+    const cleanupTimers = providerCleanupTimers.current;
+    const pendingCleanup = cleanupTimers.get(provider);
+    if (pendingCleanup) {
+      window.clearTimeout(pendingCleanup);
+      cleanupTimers.delete(provider);
+    }
+
+    void websocketProvider.connect();
+
+    return () => {
+      websocketProvider.disconnect();
+      const cleanupTimer = window.setTimeout(() => {
+        void localPersistence?.destroy();
+        provider.destroy();
+        websocketProvider.destroy();
+        yDocument.destroy();
+        cleanupTimers.delete(provider);
+      }, 0);
+      cleanupTimers.set(provider, cleanupTimer);
+    };
+  }, [localPersistence, provider, websocketProvider, yDocument]);
 
   return (
     <div className={`document-editor editor-font-${fontFamily}`}>
