@@ -9,7 +9,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -22,13 +22,13 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm --filter @collabdocs/web dev",
-      url: "http://127.0.0.1:3000/api/health/ready",
+      url: "http://localhost:3000/api/health/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
       command: "pnpm --filter @collabdocs/realtime dev",
-      url: "http://127.0.0.1:1234/health/ready",
+      url: "http://localhost:1234/health/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

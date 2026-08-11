@@ -47,11 +47,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      APP_URL: http://127.0.0.1:3000
+      APP_URL: http://localhost:3000
       DATABASE_URL: postgresql://collabdocs:collabdocs@127.0.0.1:5432/collabdocs?schema=public
-      INTERNAL_WEB_URL: http://127.0.0.1:3000
-      NEXT_PUBLIC_REALTIME_URL: ws://127.0.0.1:1234
-      S3_ENDPOINT: http://127.0.0.1:9000
+      INTERNAL_WEB_URL: http://localhost:3000
+      NEXT_PUBLIC_REALTIME_URL: ws://localhost:1234
+      S3_ENDPOINT: http://localhost:9000
       S3_REGION: us-east-1
       S3_BUCKET: collabdocs
       S3_ACCESS_KEY: collabdocs
