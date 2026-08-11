@@ -88,10 +88,15 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   const documentId = new URL(page.url()).searchParams.get("document");
   expect(documentId).toBeTruthy();
 
+  const memberDocumentResponsePromise = memberPage.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/documents/${documentId}`,
+  );
   await memberPage.goto(`/?document=${documentId}`);
+  expect((await memberDocumentResponsePromise).ok()).toBeTruthy();
   const ownerEditor = page.locator(".document-editor .tiptap");
   const memberEditor = memberPage.locator(".document-editor .tiptap");
-  await expect(memberEditor).toBeVisible();
+  await expect(memberEditor).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("实时协作已连接", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -140,7 +145,14 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   await page.getByRole("button", { name: "移到回收站" }).click();
   await expect(page.getByRole("button", { name: "回收站" })).toBeVisible();
   const recoveryResponsePromise = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === "/api/recovery",
+    (response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname.startsWith("/api/workspaces/") &&
+        url.pathname.endsWith("/tree") &&
+        url.searchParams.get("view") === "trash"
+      );
+    },
   );
   await page.getByRole("button", { name: "回收站" }).click();
   expect((await recoveryResponsePromise).ok()).toBeTruthy();
