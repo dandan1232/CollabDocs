@@ -1,0 +1,131 @@
+import { expect, test } from "@playwright/test";
+
+test("访客可完成团队协作、离线恢复、分享、附件、搜索和回收站流程", async ({
+  browser,
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByText("欢迎来到 CollabDocs", { exact: true }).first(),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "新建团队空间" }).click();
+  await page.getByPlaceholder("输入名称后按 Enter").fill("端到端协作空间");
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(
+    page.getByText("端到端协作空间", { exact: true }).first(),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "新建文件夹" }).click();
+  await page.getByPlaceholder("输入名称后按 Enter").fill("验收资料");
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page.getByText("验收资料", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "邀请伙伴" }).click();
+  const inviteLink = await page
+    .locator(".invite-dialog input[readonly]")
+    .inputValue();
+
+  const memberContext = await browser.newContext();
+  const memberPage = await memberContext.newPage();
+  await memberPage.goto(inviteLink);
+  await expect(
+    memberPage.getByText("端到端协作空间", { exact: true }).first(),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "关闭邀请窗口" }).click();
+  await page.getByRole("button", { name: "新建文档" }).click();
+  await page.getByPlaceholder("输入名称后按 Enter").fill("多人验收文档");
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page.locator(".document-editor .tiptap")).toBeVisible();
+  const documentId = new URL(page.url()).searchParams.get("document");
+  expect(documentId).toBeTruthy();
+
+  await memberPage.goto(`/?document=${documentId}`);
+  const ownerEditor = page.locator(".document-editor .tiptap");
+  const memberEditor = memberPage.locator(".document-editor .tiptap");
+  await expect(memberEditor).toBeVisible();
+  await ownerEditor.click();
+  await ownerEditor.pressSequentially("实时协作正文-SEARCH-UNIQUE", {
+    delay: 25,
+  });
+  await expect(memberEditor).toContainText("实时协作正文-SEARCH-UNIQUE");
+
+  await page.context().setOffline(true);
+  await ownerEditor.press("End");
+  await ownerEditor.pressSequentially(" 离线补充", { delay: 20 });
+  await page.context().setOffline(false);
+  await expect(memberEditor).toContainText("离线补充", { timeout: 30_000 });
+
+  const attachmentInput = page.locator(
+    'input[type="file"][accept*="application/pdf"]',
+  );
+  await attachmentInput.setInputFiles({
+    name: "协作说明.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("CollabDocs E2E attachment"),
+  });
+  await expect(
+    ownerEditor.getByText("协作说明.txt", { exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "分享", exact: true }).click();
+  await page.getByRole("button", { name: "生成只读链接" }).click();
+  const shareLink = await page
+    .locator(".share-dialog input[readonly]")
+    .inputValue();
+  const viewerContext = await browser.newContext();
+  const viewerPage = await viewerContext.newPage();
+  await viewerPage.goto(shareLink);
+  await expect(viewerPage.getByText("只读", { exact: true })).toBeVisible();
+  await expect(viewerPage.locator(".document-editor .tiptap")).toHaveAttribute(
+    "contenteditable",
+    "false",
+  );
+
+  await page.getByRole("button", { name: "关闭分享窗口" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "移到回收站" }).click();
+  await expect(page.getByRole("button", { name: "回收站" })).toBeVisible();
+  await page.getByRole("button", { name: "回收站" }).click();
+  const trashedRow = page
+    .locator(".content-row")
+    .filter({ hasText: "多人验收文档" });
+  await expect(trashedRow).toBeVisible();
+  await trashedRow.getByRole("button", { name: "恢复" }).click();
+  await page.getByRole("button", { name: "工作台" }).click();
+
+  const search = page.getByRole("textbox", { name: "搜索" });
+  await search.fill("SEARCH-UNIQUE");
+  await expect(page.getByText("多人验收文档", { exact: true })).toBeVisible();
+  await page.keyboard.press(
+    process.platform === "darwin" ? "Meta+K" : "Control+K",
+  );
+  await expect(search).toBeFocused();
+
+  const mobileContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  const mobilePage = await mobileContext.newPage();
+  await mobilePage.goto("/");
+  await expect(
+    mobilePage.getByRole("button", { name: "打开导航" }),
+  ).toBeVisible();
+  await mobilePage.getByRole("button", { name: "打开导航" }).click();
+  await expect(
+    mobilePage.getByRole("navigation", { name: "内容导航" }),
+  ).toBeVisible();
+  await mobilePage.getByRole("button", { name: "关闭导航" }).click();
+  await mobilePage
+    .getByText("欢迎来到 CollabDocs", { exact: true })
+    .first()
+    .click();
+  await expect(mobilePage.locator(".document-editor .tiptap")).toBeVisible();
+  await expect(mobilePage.getByText(/人在线/).first()).toBeVisible();
+
+  await Promise.all([
+    memberContext.close(),
+    viewerContext.close(),
+    mobileContext.close(),
+  ]);
+});

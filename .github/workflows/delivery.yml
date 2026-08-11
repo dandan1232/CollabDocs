@@ -41,10 +41,69 @@ jobs:
       - name: Run lint, type checks, tests, and build
         run: pnpm check
 
+  e2e:
+    name: Browser acceptance
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      APP_URL: http://127.0.0.1:3000
+      DATABASE_URL: postgresql://collabdocs:collabdocs@127.0.0.1:5432/collabdocs?schema=public
+      INTERNAL_WEB_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_REALTIME_URL: ws://127.0.0.1:1234
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: collabdocs
+      S3_ACCESS_KEY: collabdocs
+      S3_SECRET_KEY: collabdocs-local-secret
+      S3_FORCE_PATH_STYLE: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start data services
+        run: |
+          docker compose up -d postgres minio
+          docker compose run --rm minio-init
+
+      - name: Prepare database packages and schema
+        run: |
+          pnpm --filter @collabdocs/shared build
+          pnpm --filter @collabdocs/db build
+          pnpm --filter @collabdocs/db db:migrate:deploy
+
+      - name: Run browser acceptance
+        run: pnpm test:e2e
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs postgres minio
+
+      - name: Stop data services
+        if: always()
+        run: docker compose down --volumes
+
   publish:
     name: Publish ${{ matrix.name }} image
     if: github.event_name != 'pull_request'
-    needs: quality
+    needs:
+      - quality
+      - e2e
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

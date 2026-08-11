@@ -431,6 +431,51 @@ select:focus-visible {
   color: var(--ink-faint);
 }
 
+.search-box kbd {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 0.28rem;
+  background: var(--paper-muted);
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.search-filters label {
+  display: flex;
+  min-height: 2.4rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  font-size: 0.75rem;
+}
+
+.search-filters select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.search-filters + .contents-section {
+  margin-top: 1.5rem;
+}
+
 .online-stack {
   display: flex;
   align-items: center;
@@ -1222,6 +1267,47 @@ select:focus-visible {
   }
 }
 
+@media print {
+  @page {
+    margin: 18mm;
+  }
+
+  .editor-topbar,
+  .editor-controls,
+  .editor-toolbar,
+  .editor-sync-alert,
+  .document-footer,
+  .presence-card,
+  .dialog-backdrop,
+  .document-readonly-banner {
+    display: none !important;
+  }
+
+  .editor-studio,
+  .document-page {
+    min-height: auto;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .document-page {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border: 0;
+  }
+
+  .document-editor .tiptap {
+    min-height: auto;
+    padding-bottom: 0;
+    color: #111 !important;
+  }
+
+  .document-editor .tiptap a {
+    color: #111 !important;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1655,6 +1741,17 @@ select:focus-visible {
   flex: 0 0 auto;
   margin: 0 0.2rem;
   background: var(--line);
+}
+
+.toolbar-transfer-error {
+  max-width: 14rem;
+  flex: 0 0 auto;
+  padding: 0 0.55rem;
+  color: var(--terracotta-deep);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .document-editor .tiptap {

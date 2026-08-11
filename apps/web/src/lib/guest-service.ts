@@ -171,7 +171,7 @@ export async function bootstrapGuestSession(
       },
     });
 
-    await transaction.workspace.create({
+    const personalWorkspace = await transaction.workspace.create({
       data: {
         type: WorkspaceType.PERSONAL,
         name: `${profile.nickname}的个人空间`,
@@ -184,6 +184,15 @@ export async function bootstrapGuestSession(
             role: WorkspaceRole.OWNER,
           },
         },
+      },
+    });
+
+    await transaction.document.create({
+      data: {
+        workspaceId: personalWorkspace.id,
+        title: "欢迎来到 CollabDocs",
+        createdById: guestId,
+        updatedById: guestId,
       },
     });
   });

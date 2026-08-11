@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { requestJson } from "@/lib/client-request";
 
@@ -62,6 +62,7 @@ type FolderItem = {
   id: string;
   parentId: string | null;
   name: string;
+  updatedAt: string;
   deletedAt: string | null;
   purgeAfter: string | null;
 };
@@ -85,10 +86,13 @@ type Tree = {
 
 type SearchResults = Pick<Tree, "folders" | "documents"> & {
   query: string;
+  searchedAt: string;
 };
 
 type View = "home" | "favorites" | "trash";
 type CreateMode = "folder" | "document" | "team" | null;
+type SearchType = "all" | "documents" | "folders";
+type SearchRecency = "any" | "7d" | "30d";
 
 type InviteDetails = {
   token: string;
@@ -113,6 +117,8 @@ export function WorkspaceShell() {
   const [folderId, setFolderId] = useState<string | null>(null);
   const [view, setView] = useState<View>("home");
   const [query, setQuery] = useState("");
+  const [searchType, setSearchType] = useState<SearchType>("all");
+  const [searchRecency, setSearchRecency] = useState<SearchRecency>("any");
   const [searchResults, setSearchResults] = useState<SearchResults | null>(
     null,
   );
@@ -132,6 +138,7 @@ export function WorkspaceShell() {
   const [dark, setDark] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [activeShareToken, setActiveShareToken] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const openDocument = useCallback((documentId: string) => {
     const url = new URL(window.location.href);
@@ -167,6 +174,18 @@ export function WorkspaceShell() {
     });
 
     return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    function focusSearch(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 
   useEffect(() => {
@@ -326,9 +345,28 @@ export function WorkspaceShell() {
   const contents = useMemo(() => {
     if (!tree) return { folders: [], documents: [] };
     if (query.trim()) {
-      return searchResults?.query === query.trim()
-        ? searchResults
-        : { folders: [], documents: [] };
+      if (searchResults?.query !== query.trim()) {
+        return { folders: [], documents: [] };
+      }
+      const cutoff =
+        searchRecency === "any"
+          ? null
+          : new Date(searchResults.searchedAt).getTime() -
+            (searchRecency === "7d" ? 7 : 30) * 24 * 60 * 60 * 1000;
+      const isRecent = (updatedAt: string) =>
+        cutoff === null || new Date(updatedAt).getTime() >= cutoff;
+      return {
+        folders:
+          searchType === "documents"
+            ? []
+            : searchResults.folders.filter((item) => isRecent(item.updatedAt)),
+        documents:
+          searchType === "folders"
+            ? []
+            : searchResults.documents.filter((item) =>
+                isRecent(item.updatedAt),
+              ),
+      };
     }
     if (view === "favorites") {
       return {
@@ -344,7 +382,7 @@ export function WorkspaceShell() {
       folders: tree.folders.filter((item) => item.parentId === folderId),
       documents: tree.documents.filter((item) => item.folderId === folderId),
     };
-  }, [folderId, query, searchResults, tree, view]);
+  }, [folderId, query, searchRecency, searchResults, searchType, tree, view]);
 
   const recentDocuments = useMemo(
     () =>
@@ -616,11 +654,13 @@ export function WorkspaceShell() {
           <label className="search-box">
             <Search size={17} />
             <input
+              ref={searchInputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索文档与文件夹"
               aria-label="搜索"
             />
+            <kbd>⌘/Ctrl K</kbd>
           </label>
           <div className="online-stack" title="当前在线">
             <span>1 人在线</span>
@@ -692,6 +732,37 @@ export function WorkspaceShell() {
               </div>
             )}
           </div>
+
+          {query.trim() ? (
+            <div className="search-filters" aria-label="搜索筛选">
+              <label>
+                <span>类型</span>
+                <select
+                  value={searchType}
+                  onChange={(event) =>
+                    setSearchType(event.target.value as SearchType)
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="documents">仅文档</option>
+                  <option value="folders">仅文件夹</option>
+                </select>
+              </label>
+              <label>
+                <span>更新时间</span>
+                <select
+                  value={searchRecency}
+                  onChange={(event) =>
+                    setSearchRecency(event.target.value as SearchRecency)
+                  }
+                >
+                  <option value="any">不限</option>
+                  <option value="7d">最近 7 天</option>
+                  <option value="30d">最近 30 天</option>
+                </select>
+              </label>
+            </div>
+          ) : null}
 
           {createMode && (
             <form

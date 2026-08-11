@@ -22,6 +22,7 @@ interface DocumentSearchRow {
 
 export interface WorkspaceSearchResult {
   query: string;
+  searchedAt: Date;
   folders: Array<{
     id: string;
     parentId: string | null;
@@ -80,7 +81,7 @@ export async function searchWorkspace(
   await requireWorkspaceAccess(database, credential, workspaceId);
 
   if (!query) {
-    return { query, folders: [], documents: [] };
+    return { query, searchedAt: new Date(), folders: [], documents: [] };
   }
 
   const pattern = `%${escapeLikePattern(query)}%`;
@@ -136,6 +137,7 @@ export async function searchWorkspace(
 
   return {
     query,
+    searchedAt: new Date(),
     folders: folders.map((folder) => ({
       ...folder,
       deletedAt: null,

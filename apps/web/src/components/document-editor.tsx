@@ -16,6 +16,8 @@ import { StarterKit } from "@tiptap/starter-kit";
 import {
   Bold,
   Code2,
+  FileDown,
+  FileUp,
   Heading1,
   Heading2,
   Italic,
@@ -23,6 +25,7 @@ import {
   ListOrdered,
   Minus,
   Paperclip,
+  Printer,
   Quote,
   Redo2,
   Strikethrough,
@@ -30,6 +33,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
+import TurndownService from "turndown";
 import * as Y from "yjs";
 
 import { requestJson } from "@/lib/client-request";
@@ -59,6 +63,7 @@ export type LocalPersistenceStatus = "loading" | "ready" | "unavailable";
 
 type DocumentEditorProps = {
   documentId: string;
+  documentTitle: string;
   initialState: string | null;
   fontFamily: EditorFont;
   viewer: RealtimeUser;
@@ -96,6 +101,8 @@ function encodeBase64(bytes: Uint8Array): string {
 }
 
 function getRealtimeUrl(): string {
+  const configuredUrl = process.env.NEXT_PUBLIC_REALTIME_URL;
+  if (configuredUrl) return configuredUrl;
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/realtime`;
 }
@@ -119,6 +126,7 @@ async function requestRealtimeToken(
 
 export function DocumentEditor({
   documentId,
+  documentTitle,
   initialState,
   fontFamily,
   viewer,
@@ -211,7 +219,7 @@ export function DocumentEditor({
       shouldRerenderOnTransaction: false,
       editable: permission === "edit",
       extensions: [
-        StarterKit.configure({ undoRedo: false }),
+        StarterKit.configure({ undoRedo: false, link: false }),
         Link.configure({
           openOnClick: permission === "view",
           autolink: true,
@@ -299,7 +307,11 @@ export function DocumentEditor({
           只读分享 · 内容更新会实时显示
         </div>
       ) : editor ? (
-        <EditorToolbar editor={editor} onUploadAsset={onUploadAsset} />
+        <EditorToolbar
+          editor={editor}
+          documentTitle={documentTitle}
+          onUploadAsset={onUploadAsset}
+        />
       ) : (
         <div className="editor-toolbar is-loading" aria-hidden="true" />
       )}
@@ -310,13 +322,18 @@ export function DocumentEditor({
 
 function EditorToolbar({
   editor,
+  documentTitle,
   onUploadAsset,
 }: {
   editor: Editor;
+  documentTitle: string;
   onUploadAsset?: DocumentEditorProps["onUploadAsset"];
 }) {
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const state = useEditorState({
     editor,
     selector: ({ editor: currentEditor }) => ({
@@ -379,6 +396,96 @@ function EditorToolbar({
     } finally {
       setUploading(false);
       if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
+  }
+
+  async function sanitizeTransferSource(
+    format: "markdown" | "html",
+    source: string,
+  ): Promise<string> {
+    const response = await requestJson<{ html: string }>(
+      "/api/document-transfer",
+      {
+        method: "POST",
+        body: JSON.stringify({ format, source }),
+      },
+    );
+    return response.html;
+  }
+
+  async function importSelectedFile(file: File | undefined) {
+    if (!file) return;
+    setTransferring(true);
+    setTransferError(null);
+    try {
+      if (file.size > 2_000_000) {
+        throw new Error("导入文件不能超过 2 MB。");
+      }
+      const extension = file.name.split(".").at(-1)?.toLowerCase();
+      if (
+        !extension ||
+        !["md", "markdown", "html", "htm"].includes(extension)
+      ) {
+        throw new Error("只支持 Markdown 或 HTML 文件。");
+      }
+      const format =
+        extension === "md" || extension === "markdown" ? "markdown" : "html";
+      const html = await sanitizeTransferSource(format, await file.text());
+      if (window.confirm("导入会替换当前文档内容，是否继续？")) {
+        editor.commands.setContent(html);
+      }
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : "文档导入失败");
+    } finally {
+      setTransferring(false);
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
+  function safeFileName(extension: string): string {
+    const baseName =
+      documentTitle.replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_").trim() ||
+      "无标题文档";
+    return `${baseName}.${extension}`;
+  }
+
+  function downloadText(content: string, type: string, extension: string) {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = safeFileName(extension);
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportDocument(format: "markdown" | "html") {
+    setTransferring(true);
+    setTransferError(null);
+    try {
+      const html = await sanitizeTransferSource("html", editor.getHTML());
+      if (format === "markdown") {
+        const markdown = new TurndownService({
+          bulletListMarker: "-",
+          codeBlockStyle: "fenced",
+          headingStyle: "atx",
+        }).turndown(html);
+        downloadText(markdown, "text/markdown;charset=utf-8", "md");
+        return;
+      }
+
+      const escapedTitle = documentTitle
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+      downloadText(
+        `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapedTitle}</title></head><body><main>${html}</main></body></html>`,
+        "text/html;charset=utf-8",
+        "html",
+      );
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : "文档导出失败");
+    } finally {
+      setTransferring(false);
     }
   }
 
@@ -479,6 +586,45 @@ function EditorToolbar({
             }
           />
         </>
+      ) : null}
+      <span className="toolbar-divider" />
+      <ToolbarButton
+        label={transferring ? "正在处理文档" : "导入 Markdown 或 HTML"}
+        disabled={transferring}
+        onClick={() => importInputRef.current?.click()}
+        icon={<FileUp size={18} />}
+      />
+      <input
+        ref={importInputRef}
+        className="sr-only"
+        type="file"
+        accept=".md,.markdown,.html,.htm,text/markdown,text/html"
+        onChange={(event) =>
+          void importSelectedFile(event.currentTarget.files?.[0])
+        }
+      />
+      <ToolbarButton
+        label="导出 Markdown"
+        disabled={transferring}
+        onClick={() => void exportDocument("markdown")}
+        icon={<FileDown size={18} />}
+      />
+      <ToolbarButton
+        label="导出 HTML"
+        disabled={transferring}
+        onClick={() => void exportDocument("html")}
+        icon={<Code2 size={18} />}
+      />
+      <ToolbarButton
+        label="打印或导出 PDF"
+        disabled={transferring}
+        onClick={() => window.print()}
+        icon={<Printer size={18} />}
+      />
+      {transferError ? (
+        <span className="toolbar-transfer-error" role="alert">
+          {transferError}
+        </span>
       ) : null}
     </div>
   );

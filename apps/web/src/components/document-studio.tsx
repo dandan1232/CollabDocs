@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Share2,
   Sun,
+  Trash2,
   Type,
   Wifi,
   WifiOff,
@@ -468,6 +469,21 @@ export function DocumentStudio({
     onClose();
   }
 
+  async function moveToTrash() {
+    if (!window.confirm("确定把这篇文档移到回收站吗？30 天内可以恢复。")) {
+      return;
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (saveRetryTimerRef.current) clearTimeout(saveRetryTimerRef.current);
+    try {
+      await requestJson(`/api/documents/${documentId}`, { method: "DELETE" });
+      onClose();
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveMessage(error instanceof Error ? error.message : "移到回收站失败");
+    }
+  }
+
   async function createShareLink() {
     setShareBusy(true);
     setShareCopied(false);
@@ -730,6 +746,14 @@ export function DocumentStudio({
           <Maximize2 size={16} />
           宽页面
         </button>
+        <button
+          type="button"
+          onClick={() => void moveToTrash()}
+          disabled={document.access.permission === "view"}
+        >
+          <Trash2 size={16} />
+          移到回收站
+        </button>
         <span
           className={`realtime-state state-${online ? realtimeStatus : "offline"}`}
         >
@@ -794,6 +818,7 @@ export function DocumentStudio({
         {realtimeViewer ? (
           <DocumentEditor
             documentId={document.id}
+            documentTitle={title || "无标题文档"}
             initialState={document.state}
             fontFamily={fontFamily}
             viewer={realtimeViewer}
