@@ -167,7 +167,10 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   await expect(
     mobilePage.getByRole("navigation", { name: "内容导航" }),
   ).toBeVisible();
-  await mobilePage.getByRole("button", { name: "关闭导航" }).click();
+  await mobilePage
+    .getByRole("complementary")
+    .getByRole("button", { name: "关闭导航" })
+    .click();
   await mobilePage
     .getByText("欢迎来到 CollabDocs", { exact: true })
     .first()
