@@ -100,7 +100,7 @@ jobs:
 
   publish:
     name: Publish ${{ matrix.name }} image
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs:
       - quality
       - e2e
@@ -150,7 +150,7 @@ jobs:
 
   deploy:
     name: Deploy production
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs:
       - quality
       - publish
