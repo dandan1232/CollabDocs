@@ -64,6 +64,9 @@ export type RealtimeStatus =
 
 export type LocalPersistenceStatus = "loading" | "ready" | "unavailable";
 
+const REALTIME_RECOVERY_INTERVAL_MS = 6_000;
+const FALLBACK_PULL_INTERVAL_MS = 5_000;
+
 type DocumentEditorProps = {
   documentId: string;
   documentTitle: string;
@@ -168,12 +171,18 @@ export function DocumentEditor({
       token: () => requestRealtimeToken(documentId, shareToken),
       flushDelay: 40,
       onStatus: ({ status }) => {
-        if (status !== "connected") onStatusChange(status);
+        if (status !== "connected") {
+          onStatusChange(status);
+        }
       },
       onSynced: ({ state }) => {
-        if (state) onStatusChange("connected");
+        if (state) {
+          onStatusChange("connected");
+        }
       },
-      onAuthenticationFailed: () => onStatusChange("unauthorized"),
+      onAuthenticationFailed: () => {
+        onStatusChange("unauthorized");
+      },
       onAwarenessChange: ({ states }) => {
         const users = new Map<string, RealtimeUser>();
         for (const state of states) {
@@ -313,16 +322,61 @@ export function DocumentEditor({
 
   useEffect(() => {
     const cleanupTimers = providerCleanupTimers.current;
+    let unauthorized = false;
     const pendingCleanup = cleanupTimers.get(provider);
     if (pendingCleanup) {
       window.clearTimeout(pendingCleanup);
       cleanupTimers.delete(provider);
     }
 
+    const markUnauthorized = () => {
+      unauthorized = true;
+    };
+    const clearUnauthorized = ({ state }: { state: boolean }) => {
+      if (state) unauthorized = false;
+    };
+    const recoverRealtimeSubscription = () => {
+      if (
+        provider.synced ||
+        unauthorized ||
+        !navigator.onLine ||
+        window.document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+
+      // Some embedded WebKit browsers can open the shared socket without
+      // delivering its open event to the attached document provider. Reattach
+      // so Hocuspocus immediately performs authentication and SyncStepOne on
+      // an already-open socket, then make sure reconnect attempts stay active.
+      provider.detach();
+      provider.attach();
+      void websocketProvider.connect();
+    };
+
+    provider.on("authenticationFailed", markUnauthorized);
+    provider.on("synced", clearUnauthorized);
     provider.attach();
     void websocketProvider.connect();
+    const recoveryInterval = window.setInterval(
+      recoverRealtimeSubscription,
+      REALTIME_RECOVERY_INTERVAL_MS,
+    );
+    window.addEventListener("online", recoverRealtimeSubscription);
+    window.document.addEventListener(
+      "visibilitychange",
+      recoverRealtimeSubscription,
+    );
 
     return () => {
+      window.clearInterval(recoveryInterval);
+      window.removeEventListener("online", recoverRealtimeSubscription);
+      window.document.removeEventListener(
+        "visibilitychange",
+        recoverRealtimeSubscription,
+      );
+      provider.off("authenticationFailed", markUnauthorized);
+      provider.off("synced", clearUnauthorized);
       websocketProvider.disconnect();
       const cleanupTimer = window.setTimeout(() => {
         void localPersistence?.destroy();
@@ -334,6 +388,62 @@ export function DocumentEditor({
       cleanupTimers.set(provider, cleanupTimer);
     };
   }, [localPersistence, provider, websocketProvider, yDocument]);
+
+  useEffect(() => {
+    let active = true;
+    let pulling = false;
+
+    const pullPersistedState = async () => {
+      if (
+        !active ||
+        pulling ||
+        !navigator.onLine ||
+        window.document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+
+      pulling = true;
+      try {
+        const remote = await requestJson<{ state: string | null }>(
+          `/api/documents/${encodeURIComponent(documentId)}`,
+          {
+            cache: "no-store",
+            headers: shareToken
+              ? { "x-collabdocs-share": shareToken }
+              : undefined,
+            timeoutMs: 8_000,
+          },
+        );
+        if (active && remote.state) {
+          Y.applyUpdate(yDocument, decodeBase64(remote.state));
+        }
+      } catch {
+        // WebSocket remains the primary transport. A failed fallback pull is
+        // intentionally silent and the next interval retries it.
+      } finally {
+        pulling = false;
+      }
+    };
+
+    const pullInterval = window.setInterval(
+      () => void pullPersistedState(),
+      FALLBACK_PULL_INTERVAL_MS,
+    );
+    const pullWhenAvailable = () => void pullPersistedState();
+    window.addEventListener("online", pullWhenAvailable);
+    window.document.addEventListener("visibilitychange", pullWhenAvailable);
+
+    return () => {
+      active = false;
+      window.clearInterval(pullInterval);
+      window.removeEventListener("online", pullWhenAvailable);
+      window.document.removeEventListener(
+        "visibilitychange",
+        pullWhenAvailable,
+      );
+    };
+  }, [documentId, shareToken, yDocument]);
 
   return (
     <div className={`document-editor editor-font-${fontFamily}`}>

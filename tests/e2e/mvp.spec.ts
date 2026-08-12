@@ -114,6 +114,29 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   await page.context().setOffline(false);
   await expect(memberEditor).toContainText("离线补充", { timeout: 30_000 });
 
+  const mobileShareResponse = await page.request.post("/api/shares", {
+    data: { documentId, permission: "edit" },
+  });
+  const mobileShare = (await mobileShareResponse.json()) as { token: string };
+  expect(mobileShareResponse.ok(), JSON.stringify(mobileShare)).toBeTruthy();
+  const mobileSyncContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) " +
+      "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 " +
+      "MicroMessenger/8.0.75 NetType/WIFI Language/zh_CN",
+  });
+  const mobileSyncPage = await mobileSyncContext.newPage();
+  await mobileSyncPage.goto(`/?share=${encodeURIComponent(mobileShare.token)}`);
+  const mobileSyncEditor = mobileSyncPage.locator(".document-editor .tiptap");
+  await expect(mobileSyncEditor).toBeVisible({ timeout: 30_000 });
+  await expect(mobileSyncEditor).toHaveAttribute("contenteditable", "true");
+  await mobileSyncEditor.click();
+  await mobileSyncPage.keyboard.insertText("MOBILE-TO-DESKTOP-SYNC");
+  await expect(ownerEditor).toContainText("MOBILE-TO-DESKTOP-SYNC", {
+    timeout: 30_000,
+  });
+
   const attachmentInput = page.locator(
     'input[type="file"][accept*="application/pdf"]',
   );
@@ -197,6 +220,7 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
   await Promise.all([
     memberContext.close(),
     viewerContext.close(),
+    mobileSyncContext.close(),
     mobileContext.close(),
   ]);
 });
