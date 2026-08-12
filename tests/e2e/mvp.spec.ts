@@ -190,8 +190,9 @@ test("访客可完成团队协作、离线恢复、分享、附件、搜索和�
     .getByText("欢迎来到 CollabDocs", { exact: true })
     .first()
     .click();
-  await expect(mobilePage.locator(".document-editor .tiptap")).toBeVisible();
-  await expect(mobilePage.getByLabel("当前在线成员")).toBeVisible();
+  const mobileEditor = mobilePage.locator(".document-editor .tiptap");
+  await expect(mobileEditor).toBeVisible();
+  await expect(mobileEditor).toHaveAttribute("contenteditable", "true");
 
   await Promise.all([
     memberContext.close(),
