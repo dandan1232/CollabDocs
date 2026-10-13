@@ -181,8 +181,6 @@ jobs:
             DEPLOY_USER
             DEPLOY_SSH_KEY
             DEPLOY_KNOWN_HOSTS
-            GHCR_USERNAME
-            GHCR_READ_TOKEN
             COLLABDOCS_BASE_URL
           )
           for name in "${required[@]}"; do
@@ -191,6 +189,11 @@ jobs:
               exit 1
             fi
           done
+          if [[ ( -n "${GHCR_USERNAME:-}" && -z "${GHCR_READ_TOKEN:-}" ) ||
+                ( -z "${GHCR_USERNAME:-}" && -n "${GHCR_READ_TOKEN:-}" ) ]]; then
+            echo "GHCR_USERNAME and GHCR_READ_TOKEN must both be set or both be empty." >&2
+            exit 1
+          fi
 
       - name: Configure SSH
         shell: bash
@@ -219,6 +222,7 @@ jobs:
             "chmod 700 '$DEPLOY_PATH/scripts/deploy-production.sh'"
 
       - name: Authenticate server to GHCR
+        if: env.GHCR_USERNAME != '' && env.GHCR_READ_TOKEN != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -249,11 +253,3 @@ jobs:
               "cd '$DEPLOY_PATH' && ./scripts/deploy-production.sh rollback"
             exit 1
           fi
-
-      - name: Clean up superseded server images and legacy archives
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
-          ssh -p "$DEPLOY_PORT" "$remote" \
-            "cd '$DEPLOY_PATH' && ./scripts/deploy-production.sh cleanup"
