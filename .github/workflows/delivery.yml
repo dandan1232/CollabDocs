@@ -253,8 +253,38 @@ jobs:
           done
           archive="CollabDocs-${GITHUB_SHA}.tar.gz"
           docker save "${images[@]}" | gzip -1 > "$RUNNER_TEMP/$archive"
-          scp -P "$DEPLOY_PORT" "$RUNNER_TEMP/$archive" \
-            "$remote:$DEPLOY_PATH/$archive"
+          archive_size=$(stat --format='%s' "$RUNNER_TEMP/$archive")
+          ssh -p "$DEPLOY_PORT" "$remote" \
+            "truncate -s '$archive_size' '$DEPLOY_PATH/$archive'"
+          chunk_size=$(( (archive_size + 7) / 8 ))
+          transfer_pids=()
+          for index in {0..7}; do
+            offset=$(( index * chunk_size ))
+            remaining=$(( archive_size - offset ))
+            if (( remaining <= 0 )); then continue; fi
+            count=$chunk_size
+            if (( remaining < count )); then count=$remaining; fi
+            dd if="$RUNNER_TEMP/$archive" bs=1M \
+              iflag=fullblock,skip_bytes,count_bytes skip="$offset" count="$count" status=none | \
+              ssh -T -o ControlMaster=no -o ControlPath=none -p "$DEPLOY_PORT" "$remote" \
+                "dd of='$DEPLOY_PATH/$archive' bs=1M iflag=fullblock oflag=seek_bytes seek='$offset' conv=notrunc status=none" &
+            transfer_pids+=("$!")
+          done
+          transfer_failed=0
+          for pid in "${transfer_pids[@]}"; do
+            wait "$pid" || transfer_failed=1
+          done
+          if (( transfer_failed )); then
+            echo "Release archive transfer failed." >&2
+            exit 1
+          fi
+          expected_hash=$(sha256sum "$RUNNER_TEMP/$archive" | cut -d ' ' -f 1)
+          actual_hash=$(ssh -p "$DEPLOY_PORT" "$remote" \
+            "sha256sum '$DEPLOY_PATH/$archive'" | cut -d ' ' -f 1)
+          if [[ "$actual_hash" != "$expected_hash" ]]; then
+            echo "Transferred release archive does not match." >&2
+            exit 1
+          fi
           ssh -p "$DEPLOY_PORT" "$remote" \
             "docker load --input '$DEPLOY_PATH/$archive'"
           for image in "${images[@]}"; do

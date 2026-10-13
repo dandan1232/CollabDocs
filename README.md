@@ -16,6 +16,7 @@ GitHub Actions 会在拉取请求和 `main` 分支提交上运行完整质量检
 需要在 Actions 的 Delivery 工作流中手动点击 Run workflow（`workflow_dispatch`）。
 手动运行的检查通过后，工作流会把 `web`、`realtime` 和 `migrate` 镜像发布到 GHCR，
 再由 GitHub 下载带 Git commit SHA 的固定版本，通过 SSH 传送到生产服务器并导入。
+传送使用 8 路并行连接，导入前校验完整归档，导入后核对各镜像 ID。
 服务器已导入该版本时不会重复下载；手动部署缺少的版本时仍会从 GHCR 拉取。
 
 MinIO 的官方预编译镜像已无法下载。首次在没有旧镜像的环境运行时，先执行
