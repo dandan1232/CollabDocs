@@ -17,6 +17,10 @@ GitHub Actions 会在拉取请求和 `main` 分支提交上运行完整质量检
 手动运行的检查通过后，工作流会把 `web`、`realtime` 和 `migrate` 镜像发布到 GHCR，
 再让生产服务器拉取带 Git commit SHA 的固定版本。
 
+MinIO 的官方预编译镜像已无法下载。首次在没有旧镜像的环境运行时，先执行
+`docker compose build minio minio-init`，从官方源码构建项目锁定的 MinIO 和 mc
+版本。自动测试会执行这一步；现有生产服务器继续使用已缓存的同版本镜像。
+
 在 GitHub 的 `production` Environment 中配置以下 5 个必需 Secrets：
 
 - `DEPLOY_HOST`：生产服务器地址。

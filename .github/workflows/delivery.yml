@@ -76,6 +76,9 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Build pinned object storage tools
+        run: docker compose build minio minio-init
+
       - name: Start data services
         run: |
           docker compose up -d postgres minio
@@ -216,6 +219,8 @@ jobs:
             "$remote:$DEPLOY_PATH/docker-compose.yml"
           scp -P "$DEPLOY_PORT" deploy/docker-compose.ghcr.yml \
             "$remote:$DEPLOY_PATH/deploy/docker-compose.ghcr.yml"
+          scp -P "$DEPLOY_PORT" deploy/minio.Dockerfile \
+            "$remote:$DEPLOY_PATH/deploy/minio.Dockerfile"
           scp -P "$DEPLOY_PORT" scripts/deploy-production.sh \
             "$remote:$DEPLOY_PATH/scripts/deploy-production.sh"
           ssh -p "$DEPLOY_PORT" "$remote" \
