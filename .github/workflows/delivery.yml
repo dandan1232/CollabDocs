@@ -158,7 +158,7 @@ jobs:
       - quality
       - publish
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment:
       name: production
     env:
@@ -235,6 +235,37 @@ jobs:
           printf '%s' "$GHCR_READ_TOKEN" | \
             ssh -p "$DEPLOY_PORT" "$remote" \
               "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+
+      - name: Transfer release images over SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
+          if [[ -n "${GHCR_USERNAME:-}" ]]; then
+            printf '%s' "$GHCR_READ_TOKEN" | \
+              docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+          fi
+          images=()
+          for service in migrate web realtime; do
+            image="ghcr.io/dandan1232/collabdocs-${service}:${GITHUB_SHA}"
+            docker pull --platform linux/amd64 "$image"
+            images+=("$image")
+          done
+          archive="CollabDocs-${GITHUB_SHA}.tar.gz"
+          docker save "${images[@]}" | gzip -1 > "$RUNNER_TEMP/$archive"
+          scp -P "$DEPLOY_PORT" "$RUNNER_TEMP/$archive" \
+            "$remote:$DEPLOY_PATH/$archive"
+          ssh -p "$DEPLOY_PORT" "$remote" \
+            "docker load --input '$DEPLOY_PATH/$archive'"
+          for image in "${images[@]}"; do
+            expected_id=$(docker image inspect --format '{{.Id}}' "$image")
+            actual_id=$(ssh -p "$DEPLOY_PORT" "$remote" \
+              "docker image inspect --format '{{.Id}}' '$image'")
+            if [[ "$actual_id" != "$expected_id" ]]; then
+              echo "Imported image does not match: $image" >&2
+              exit 1
+            fi
+          done
 
       - name: Deploy release
         shell: bash

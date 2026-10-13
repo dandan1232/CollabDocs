@@ -15,7 +15,8 @@
 GitHub Actions 会在拉取请求和 `main` 分支提交上运行完整质量检查。发布和部署
 需要在 Actions 的 Delivery 工作流中手动点击 Run workflow（`workflow_dispatch`）。
 手动运行的检查通过后，工作流会把 `web`、`realtime` 和 `migrate` 镜像发布到 GHCR，
-再让生产服务器拉取带 Git commit SHA 的固定版本。
+再由 GitHub 下载带 Git commit SHA 的固定版本，通过 SSH 传送到生产服务器并导入。
+服务器已导入该版本时不会重复下载；手动部署缺少的版本时仍会从 GHCR 拉取。
 
 MinIO 的官方预编译镜像已无法下载。首次在没有旧镜像的环境运行时，先执行
 `docker compose build minio minio-init`，从官方源码构建项目锁定的 MinIO 和 mc
@@ -43,6 +44,7 @@ MinIO 的官方预编译镜像已无法下载。首次在没有旧镜像的环�
 
 首次从本地镜像切换到 GHCR 前，先备份原 Compose 配置并记录现有镜像 ID。
 首次部署没有上一 GHCR 版本可自动回滚，失败时应使用原配置和本地镜像手动恢复。
-部署流程保留服务器上的旧镜像和 `CollabDocs-*.tar` 归档，不自动清理。
+部署流程保留服务器上的旧镜像和 `CollabDocs-*.tar`、`CollabDocs-*.tar.gz` 归档，
+不自动清理。
 确认无需旧备份后，可手动运行 `scripts/deploy-production.sh cleanup`。
 GHCR 每周自动保留每个服务最近 10 个镜像版本。

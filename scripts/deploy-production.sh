@@ -50,7 +50,7 @@ deploy_stack() {
     exit 2
   fi
 
-  compose pull migrate web realtime
+  compose pull --policy missing migrate web realtime
   compose up -d --no-build postgres minio
   compose run --rm minio-init
   compose run --rm migrate
