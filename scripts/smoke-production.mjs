@@ -69,5 +69,11 @@ try {
   await checkWebSocketUpgrade();
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
+  if (error instanceof Error && error.cause instanceof Error) {
+    console.error(`Cause: ${error.cause.message}`);
+    if (error.cause.code) {
+      console.error(`Code: ${error.cause.code}`);
+    }
+  }
   process.exit(1);
 }
